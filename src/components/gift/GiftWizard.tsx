@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { createGiftSchema, type CreateGiftInput, type CreateGiftFormInput } from "@/types/schemas";
@@ -10,6 +10,7 @@ import { TemplateSelector } from "./TemplateSelector";
 import { WizardProgress } from "./WizardProgress";
 import { GiftPreviewCard } from "./GiftPreviewCard";
 import { BLANK_TEMPLATE, type GiftTemplate } from "@/lib/giftTemplates";
+import { useGiftDraft } from "@/hooks/useGiftDraft";
 import styles from "./GiftWizard.module.css";
 
 // Step indices
@@ -20,10 +21,24 @@ const STEP_UNLOCK = 3;
 const STEP_REVIEW = 4;
 
 export function GiftWizard() {
-  const [step, setStep] = useState(STEP_OCCASION);
+  const { readDraft, saveDraft, clearDraft } = useGiftDraft();
+
+  // Initialise step from draft (if available) so the wizard resumes after refresh
+  const [step, setStep] = useState<number>(() => {
+    const draft = readDraft();
+    // Never restore directly to the review step — require the user to
+    // complete the flow again so no stale data is submitted.
+    if (draft && draft.step > STEP_OCCASION && draft.step < STEP_REVIEW) {
+      return draft.step;
+    }
+    return STEP_OCCASION;
+  });
+
   const [template, setTemplate] = useState<GiftTemplate>(BLANK_TEMPLATE);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const draft = readDraft();
 
   const {
     register,
@@ -34,25 +49,55 @@ export function GiftWizard() {
     formState: { errors },
   } = useForm<CreateGiftFormInput>({
     resolver: zodResolver(createGiftSchema),
-    defaultValues: { paymentProvider: "paystack", recipientIsRegistered: false },
+    defaultValues: {
+      paymentProvider: "paystack",
+      recipientIsRegistered: false,
+      // Restore safe draft fields — phone is intentionally excluded
+      recipientName: draft?.recipientName ?? "",
+      recipientEmail: draft?.recipientEmail ?? "",
+      amountNgn: draft?.amountNgn,
+      message: draft?.message ?? "",
+      unlockAt: draft?.unlockAt ?? "",
+    },
     mode: "onTouched",
   });
+
+  // Persist non-sensitive draft fields whenever the user advances a step
+  function persistDraft(currentStep: number) {
+    const values = getValues();
+    saveDraft({
+      step: currentStep,
+      recipientName: values.recipientName,
+      recipientEmail: values.recipientEmail,
+      amountNgn: values.amountNgn,
+      message: values.message,
+      unlockAt: values.unlockAt,
+    });
+  }
 
   function handleTemplateSelect(tpl: GiftTemplate) {
     setTemplate(tpl);
     if (tpl.suggestedMessage) {
       setValue("message", tpl.suggestedMessage);
     }
-    setStep(STEP_RECIPIENT);
+    const next = STEP_RECIPIENT;
+    persistDraft(next);
+    setStep(next);
   }
 
   async function next(fields: (keyof CreateGiftFormInput)[]) {
     const valid = await trigger(fields);
-    if (valid) setStep((s) => s + 1);
+    if (valid) {
+      const nextStep = step + 1;
+      persistDraft(nextStep);
+      setStep(nextStep);
+    }
   }
 
   function back() {
-    setStep((s) => Math.max(0, s - 1));
+    const prevStep = Math.max(0, step - 1);
+    persistDraft(prevStep);
+    setStep(prevStep);
   }
 
   const onSubmit = async (data: CreateGiftFormInput) => {
@@ -66,6 +111,8 @@ export function GiftWizard() {
       });
       const json = await res.json();
       if (!json.success) throw new Error(json.error);
+      // Clear draft after successful submission so it doesn't reappear
+      clearDraft();
       window.location.href = json.data.paymentUrl;
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");
@@ -89,6 +136,10 @@ export function GiftWizard() {
             error={errors.recipientName?.message}
             {...register("recipientName")}
           />
+          {/*
+           * Phone is intentionally NOT pre-filled from the draft.
+           * Raw phone numbers must never be persisted (issue #33 security rule).
+           */}
           <Input
             label="Recipient's Phone"
             type="tel"
@@ -169,7 +220,10 @@ export function GiftWizard() {
           <GiftPreviewCard
             data={getValues()}
             template={template}
-            onEdit={(targetStep) => setStep(targetStep)}
+            onEdit={(targetStep) => {
+              persistDraft(targetStep);
+              setStep(targetStep);
+            }}
           />
           {error && <p className={styles.error}>{error}</p>}
           <div className={styles.nav}>
