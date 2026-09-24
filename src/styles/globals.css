@@ -112,4 +112,20 @@ body {
   .btn {
     min-height: 44px;
   }
+
+  /* datetime-local on iOS/Android: fix native picker appearance */
+  input[type="datetime-local"],
+  input[type="date"],
+  input[type="time"] {
+    /* Keep 16px to prevent iOS auto-zoom */
+    font-size: var(--text-base);
+    /* Allow the native picker control to stay visible at 320px */
+    min-width: 0;
+    width: 100%;
+  }
+
+  /* number inputs: avoid horizontal scroll from spin buttons */
+  input[type="number"] {
+    font-size: var(--text-base);
+  }
 }
