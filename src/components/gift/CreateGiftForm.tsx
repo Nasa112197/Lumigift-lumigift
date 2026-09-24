@@ -7,10 +7,16 @@ import type { CreateGiftInput } from "@/types/schemas";
 import { Input } from "@/components/ui/Input";
 import { Textarea } from "@/components/ui/Textarea";
 import { Button } from "@/components/ui/Button";
+import {
+  ApiErrorBanner,
+  classifyApiError,
+  type ApiErrorState,
+} from "@/components/ui/ApiErrorBanner";
 import { GiftPreview } from "./GiftPreview";
 import { useState } from "react";
 import { useCsrf } from "@/hooks/useCsrf";
 import { formatNGN } from "@/lib/currency";
+import { logger } from "@/lib/logger";
 import styles from "./CreateGiftForm.module.css";
 
 type Step = "form" | "preview";
@@ -18,7 +24,7 @@ type Step = "form" | "preview";
 export function CreateGiftForm() {
   const [step, setStep] = useState<Step>("form");
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [apiError, setApiError] = useState<ApiErrorState | null>(null);
   const [usdcEquivalent, setUsdcEquivalent] = useState("…");
   const [showUnregisteredWarning, setShowUnregisteredWarning] = useState(false);
   const [recipientRegistered, setRecipientRegistered] = useState<boolean | null>(null);
@@ -39,7 +45,7 @@ export function CreateGiftForm() {
 
   // Step 1 → Step 2: fetch USDC estimate then show preview
   const onFormSubmit = async (data: CreateGiftInput) => {
-    setError(null);
+    setApiError(null);
     try {
       // Check if recipient is registered (GET — no CSRF needed)
       const checkRes = await fetch(
@@ -53,7 +59,7 @@ export function CreateGiftForm() {
           return; // Don't proceed to preview yet
         }
       } else {
-        // If check fails, assume registered to not block
+        // If check fails, assume registered to not block the happy path
         setRecipientRegistered(true);
       }
 
@@ -64,17 +70,15 @@ export function CreateGiftForm() {
         setUsdcEquivalent(json.data?.usdc ?? "—");
       }
     } catch {
-      // non-critical — preview still shows without USDC estimate
+      // Exchange-rate is non-critical — preview still shows without USDC estimate
     }
     setStep("preview");
   };
 
   const onProceedUnregistered = async () => {
     setShowUnregisteredWarning(false);
-    // Now proceed to fetch exchange rate and preview
     try {
       const data = getValues();
-      // GET — no CSRF needed
       const res = await fetch(`/api/v1/exchange-rate?ngn=${data.amountNgn}`);
       if (res.ok) {
         const json = await res.json();
@@ -92,7 +96,7 @@ export function CreateGiftForm() {
 
   const onConfirm = async () => {
     setLoading(true);
-    setError(null);
+    setApiError(null);
     try {
       const data = getValues();
       const res = await csrfFetch("/api/v1/gifts", {
@@ -105,8 +109,18 @@ export function CreateGiftForm() {
       });
 
       if (!res.ok) {
-        const errorData = await res.json();
-        setError(errorData.error || "Failed to create gift");
+        let errorData: { error?: string } = {};
+        try {
+          errorData = await res.json();
+        } catch {
+          // body unreadable
+        }
+        // Log safely — never log recipient data or secrets
+        logger.warn(
+          { status: res.status, code: errorData.error ? "api_error" : "unknown" },
+          "Gift creation failed"
+        );
+        setApiError(classifyApiError(new Error(errorData.error ?? ""), res.status));
         return;
       }
 
@@ -116,10 +130,20 @@ export function CreateGiftForm() {
       // Redirect to payment
       window.location.href = paymentUrl;
     } catch (err) {
-      setError(err instanceof Error ? err.message : "An error occurred");
+      // Log the error kind but not any sensitive values
+      logger.warn(
+        { message: err instanceof Error ? err.message : "unknown" },
+        "Gift creation network error"
+      );
+      setApiError(classifyApiError(err));
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleRetry = () => {
+    setApiError(null);
+    onConfirm();
   };
 
   if (step === "preview") {
@@ -129,8 +153,9 @@ export function CreateGiftForm() {
         usdcEquivalent={usdcEquivalent}
         onEdit={() => setStep("form")}
         onConfirm={onConfirm}
+        onRetry={handleRetry}
         loading={loading}
-        error={error}
+        apiError={apiError}
       />
     );
   }
@@ -198,8 +223,8 @@ export function CreateGiftForm() {
           <div className={styles.modal}>
             <h3>Unregistered Recipient</h3>
             <p>
-              The recipient's phone number is not registered with Lumigift. They will receive an SMS
-              invitation to claim the gift, but must register first.
+              The recipient&apos;s phone number is not registered with Lumigift. They will receive
+              an SMS invitation to claim the gift, but must register first.
             </p>
             <p>Are you sure you want to proceed?</p>
             <div className={styles.modalActions}>

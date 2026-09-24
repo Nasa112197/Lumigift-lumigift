@@ -6,10 +6,16 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { createGiftSchema, type CreateGiftInput, type CreateGiftFormInput } from "@/types/schemas";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
+import {
+  ApiErrorBanner,
+  classifyApiError,
+  type ApiErrorState,
+} from "@/components/ui/ApiErrorBanner";
 import { TemplateSelector } from "./TemplateSelector";
 import { WizardProgress } from "./WizardProgress";
 import { GiftPreviewCard } from "./GiftPreviewCard";
 import { BLANK_TEMPLATE, type GiftTemplate } from "@/lib/giftTemplates";
+import { logger } from "@/lib/logger";
 import styles from "./GiftWizard.module.css";
 
 // Step indices
@@ -23,7 +29,7 @@ export function GiftWizard() {
   const [step, setStep] = useState(STEP_OCCASION);
   const [template, setTemplate] = useState<GiftTemplate>(BLANK_TEMPLATE);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [apiError, setApiError] = useState<ApiErrorState | null>(null);
 
   const {
     register,
@@ -57,21 +63,48 @@ export function GiftWizard() {
 
   const onSubmit = async (data: CreateGiftFormInput) => {
     setLoading(true);
-    setError(null);
+    setApiError(null);
     try {
       const res = await fetch("/api/gifts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
       });
+
+      if (!res.ok) {
+        let errorData: { error?: string } = {};
+        try {
+          errorData = await res.json();
+        } catch {
+          // body unreadable
+        }
+        // Log error kind without exposing recipient data
+        logger.warn({ status: res.status }, "GiftWizard submission failed");
+        setApiError(classifyApiError(new Error(errorData.error ?? ""), res.status));
+        return;
+      }
+
       const json = await res.json();
-      if (!json.success) throw new Error(json.error);
+      if (!json.success) {
+        setApiError(classifyApiError(new Error(json.error ?? "")));
+        return;
+      }
+
       window.location.href = json.data.paymentUrl;
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong");
+      logger.warn(
+        { message: err instanceof Error ? err.message : "unknown" },
+        "GiftWizard network error"
+      );
+      setApiError(classifyApiError(err));
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleRetry = () => {
+    setApiError(null);
+    handleSubmit(onSubmit)();
   };
 
   return (
@@ -171,7 +204,7 @@ export function GiftWizard() {
             template={template}
             onEdit={(targetStep) => setStep(targetStep)}
           />
-          {error && <p className={styles.error}>{error}</p>}
+          {apiError && <ApiErrorBanner error={apiError} onRetry={handleRetry} />}
           <div className={styles.nav}>
             <Button type="button" variant="secondary" onClick={back}>
               Back
