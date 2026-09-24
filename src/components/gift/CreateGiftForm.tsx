@@ -7,8 +7,9 @@ import type { CreateGiftInput } from "@/types/schemas";
 import { Input } from "@/components/ui/Input";
 import { Textarea } from "@/components/ui/Textarea";
 import { Button } from "@/components/ui/Button";
+import { Dialog } from "@/components/ui/Dialog";
 import { GiftPreview } from "./GiftPreview";
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useCsrf } from "@/hooks/useCsrf";
 import { formatNGN } from "@/lib/currency";
 import styles from "./CreateGiftForm.module.css";
@@ -22,6 +23,10 @@ export function CreateGiftForm() {
   const [usdcEquivalent, setUsdcEquivalent] = useState("…");
   const [showUnregisteredWarning, setShowUnregisteredWarning] = useState(false);
   const [recipientRegistered, setRecipientRegistered] = useState<boolean | null>(null);
+
+  // Ref to the submit button that triggers the unregistered-recipient dialog;
+  // focus returns here when the dialog closes.
+  const submitButtonRef = useRef<HTMLButtonElement>(null);
 
   const { csrfFetch } = useCsrf();
 
@@ -188,29 +193,29 @@ export function CreateGiftForm() {
           {...register("message")}
         />
 
-        <Button type="submit" fullWidth>
+        <Button ref={submitButtonRef} type="submit" fullWidth>
           Preview Gift →
         </Button>
       </form>
 
-      {showUnregisteredWarning && (
-        <div className={styles.overlay}>
-          <div className={styles.modal}>
-            <h3>Unregistered Recipient</h3>
-            <p>
-              The recipient's phone number is not registered with Lumigift. They will receive an SMS
-              invitation to claim the gift, but must register first.
-            </p>
-            <p>Are you sure you want to proceed?</p>
-            <div className={styles.modalActions}>
-              <Button onClick={onCancelUnregistered} variant="secondary">
-                Cancel
-              </Button>
-              <Button onClick={onProceedUnregistered}>Proceed</Button>
-            </div>
-          </div>
+      <Dialog
+        open={showUnregisteredWarning}
+        onClose={onCancelUnregistered}
+        triggerRef={submitButtonRef}
+        title="Unregistered Recipient"
+      >
+        <p className={styles.dialogBody}>
+          The recipient&apos;s phone number is not registered with Lumigift. They will receive an
+          SMS invitation to claim the gift, but must register first.
+        </p>
+        <p className={styles.dialogBody}>Are you sure you want to proceed?</p>
+        <div className={styles.dialogActions}>
+          <Button onClick={onCancelUnregistered} variant="secondary">
+            Cancel
+          </Button>
+          <Button onClick={onProceedUnregistered}>Proceed</Button>
         </div>
-      )}
+      </Dialog>
     </>
   );
 }

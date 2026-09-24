@@ -21,6 +21,21 @@
   padding: var(--space-3) var(--space-4);
 }
 
+/* ─── Dialog content ──────────────────────────────────────────────────────── */
+.dialogBody {
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+  line-height: var(--leading-relaxed);
+  margin-bottom: var(--space-3);
+}
+
+.dialogActions {
+  display: flex;
+  gap: var(--space-3);
+  justify-content: flex-end;
+  margin-top: var(--space-6);
+}
+
 /* ─── Mobile (≤ 375px) ────────────────────────────────────────────────────── */
 @media (max-width: 375px) {
   .form {
