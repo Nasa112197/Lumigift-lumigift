@@ -1,13 +1,13 @@
 //! Benchmark tests for the Lumigift escrow contract.
 //!
-//! Measures Soroban CPU instructions (a proxy for compute units) for the two
-//! most important entry-points: `initialize` and `claim`.
+//! Measures Soroban CPU, memory, and ledger resources for the two most
+//! important entry-points: `initialize` and `claim`.
 //!
 //! Run with:
 //!   cargo bench --manifest-path contracts/escrow/Cargo.toml
 //!
-//! The thresholds below are the regression guards (issue #61 AC3).
-//! CI fails if either operation exceeds its limit.
+//! The thresholds below are the regression guards for issue #86.
+//! CI fails if either operation exceeds any limit.
 
 use criterion::{criterion_group, criterion_main, Criterion};
 use lumigift_escrow::EscrowContract;
@@ -34,6 +34,48 @@ use soroban_sdk::{
 
 const INITIALIZE_CPU_LIMIT: u64 = 500_000;
 const CLAIM_CPU_LIMIT: u64 = 300_000;
+const INITIALIZE_MEMORY_LIMIT: u64 = 1_000_000;
+const CLAIM_MEMORY_LIMIT: u64 = 500_000;
+const INITIALIZE_LEDGER_READ_BYTES_LIMIT: u64 = 100_000;
+const CLAIM_LEDGER_READ_BYTES_LIMIT: u64 = 100_000;
+const INITIALIZE_LEDGER_WRITE_BYTES_LIMIT: u64 = 100_000;
+const CLAIM_LEDGER_WRITE_BYTES_LIMIT: u64 = 100_000;
+
+macro_rules! assert_budget {
+    ($env:expr, $operation:expr, $cpu_limit:expr, $memory_limit:expr,
+        $ledger_read_bytes_limit:expr, $ledger_write_bytes_limit:expr) => {{
+    let budget = $env.cost_estimate().budget();
+    let resources = $env.cost_estimate().resources();
+    assert!(
+        budget.cpu_instruction_cost() <= $cpu_limit,
+        "{} used {} CPU instructions, exceeds limit of {}",
+        $operation,
+        budget.cpu_instruction_cost(),
+        $cpu_limit
+    );
+    assert!(
+        budget.memory_bytes_cost() <= $memory_limit,
+        "{} used {} memory bytes, exceeds limit of {}",
+        $operation,
+        budget.memory_bytes_cost(),
+        $memory_limit
+    );
+    assert!(
+        resources.disk_read_bytes as u64 <= $ledger_read_bytes_limit,
+        "{} read {} ledger bytes, exceeds limit of {}",
+        $operation,
+        resources.disk_read_bytes,
+        $ledger_read_bytes_limit
+    );
+    assert!(
+        resources.write_bytes as u64 <= $ledger_write_bytes_limit,
+        "{} wrote {} ledger bytes, exceeds limit of {}",
+        $operation,
+        resources.write_bytes,
+        $ledger_write_bytes_limit
+    );
+    }};
+}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -57,11 +99,13 @@ fn bench_initialize(c: &mut Criterion) {
 
             client.initialize(&sender, &recipient, &token_id, &100_000_000, &3_601);
 
-            // Regression guard: fail the benchmark if CPU usage exceeds threshold.
-            let cpu = env.cost_estimate().cpu_insns();
-            assert!(
-                cpu <= INITIALIZE_CPU_LIMIT,
-                "initialize used {cpu} CPU instructions, exceeds limit of {INITIALIZE_CPU_LIMIT}"
+            assert_budget!(
+                env,
+                "initialize",
+                INITIALIZE_CPU_LIMIT,
+                INITIALIZE_MEMORY_LIMIT,
+                INITIALIZE_LEDGER_READ_BYTES_LIMIT,
+                INITIALIZE_LEDGER_WRITE_BYTES_LIMIT,
             );
         });
     });
@@ -83,13 +127,17 @@ fn bench_claim(c: &mut Criterion) {
             env.ledger().with_mut(|l| l.timestamp = 3_601);
 
             // Reset cost estimate to measure only the claim call.
-            env.cost_estimate().reset();
+            let mut budget = env.cost_estimate().budget();
+            budget.reset_tracker();
             client.claim();
 
-            let cpu = env.cost_estimate().cpu_insns();
-            assert!(
-                cpu <= CLAIM_CPU_LIMIT,
-                "claim used {cpu} CPU instructions, exceeds limit of {CLAIM_CPU_LIMIT}"
+            assert_budget!(
+                env,
+                "claim",
+                CLAIM_CPU_LIMIT,
+                CLAIM_MEMORY_LIMIT,
+                CLAIM_LEDGER_READ_BYTES_LIMIT,
+                CLAIM_LEDGER_WRITE_BYTES_LIMIT,
             );
         });
     });

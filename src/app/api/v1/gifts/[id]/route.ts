@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import { getGiftById, cancelGift } from "@/server/services/gift.service";
+import { getGiftById, cancelGift, hashPhone } from "@/server/services/gift.service";
 import { refundPayment } from "@/lib/paystack";
 import { withErrorHandler, withCsrf } from "@/server/middleware";
 import type { ApiResponse, Gift } from "@/types";
@@ -17,20 +17,36 @@ export const GET = withErrorHandler(async (_req: NextRequest, context: unknown) 
     );
   }
 
-  // Strip sensitive sender info for public claim page
-  const safeGift: Partial<Gift> = {
-    id: gift.id,
-    recipientName: gift.recipientName,
-    amountNgn: gift.amountNgn,
-    message: gift.message,
-    mediaUrl: gift.mediaUrl,
-    unlockAt: gift.unlockAt,
-    status: gift.status,
-  };
+  const session = await getServerSession(authOptions);
+  const userId = (session?.user as { id?: string } | undefined)?.id;
+  const phone = (session?.user as { phone?: string } | undefined)?.phone;
+  const recipientPhoneHash = phone ? hashPhone(phone) : undefined;
 
-  return NextResponse.json<ApiResponse<Partial<Gift>>>({
+  const isSender = !!userId && gift.senderId === userId;
+  const isRecipient = !!recipientPhoneHash && gift.recipientPhoneHash === recipientPhoneHash;
+
+  if (!isSender && !isRecipient) {
+    // Unauthenticated or unrelated users only see public claim-page fields
+    const safeGift: Partial<Gift> = {
+      id: gift.id,
+      recipientName: gift.recipientName,
+      amountNgn: gift.amountNgn,
+      message: gift.message,
+      mediaUrl: gift.mediaUrl,
+      unlockAt: gift.unlockAt,
+      status: gift.status,
+    };
+    return NextResponse.json<ApiResponse<Partial<Gift>>>({
+      success: true,
+      data: safeGift,
+    });
+  }
+
+  // Sender or recipient gets the full gift (minus phone hash)
+  const { recipientPhoneHash: _omit, ...fullGift } = gift;
+  return NextResponse.json<ApiResponse<Omit<Gift, "recipientPhoneHash">>>({
     success: true,
-    data: safeGift,
+    data: fullGift,
   });
 });
 

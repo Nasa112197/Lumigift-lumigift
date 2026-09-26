@@ -19,7 +19,20 @@ interface ToastContextValue {
 const ToastContext = createContext<ToastContextValue | null>(null);
 
 const MAX_TOASTS = 3;
-const AUTO_DISMISS_MS = 5000;
+
+/**
+ * Auto-dismiss timeouts per severity.
+ *
+ * Errors and warnings remain visible longer so screen readers have enough
+ * time to announce the full message before it disappears.  Success/info
+ * toasts dismiss more quickly to reduce visual clutter.
+ */
+const DISMISS_MS: Record<ToastVariant, number> = {
+  error: 8_000,
+  warning: 7_000,
+  success: 5_000,
+  info: 5_000,
+};
 
 export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
@@ -40,7 +53,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
       });
       timers.current.set(
         id,
-        setTimeout(() => removeToast(id), AUTO_DISMISS_MS)
+        setTimeout(() => removeToast(id), DISMISS_MS[variant])
       );
     },
     [removeToast]

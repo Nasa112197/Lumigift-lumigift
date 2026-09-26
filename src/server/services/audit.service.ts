@@ -1,5 +1,7 @@
 import pool from "@/lib/db";
 
+export const MAX_AUDIT_LOG_LIMIT = 100;
+
 export type AuditEventType =
   | "gift_created"
   | "payment_received"
@@ -129,8 +131,8 @@ export async function queryAuditLogs(
 
   const total = parseInt(countResult.rows[0].count, 10);
 
-  const limit = query.limit ?? 50;
-  const offset = query.offset ?? 0;
+  const limit = Math.min(MAX_AUDIT_LOG_LIMIT, Math.max(1, query.limit ?? 50));
+  const offset = Math.max(0, query.offset ?? 0);
 
   const result = await pool.query<{
     id: string;

@@ -92,6 +92,35 @@ ol {
   border-radius: var(--radius-sm);
 }
 
+/* ─── Skip link ───────────────────────────────────────────────────────────── */
+/*
+ * The skip link is visually hidden until focused, allowing keyboard-only
+ * users to bypass the navbar and jump directly to main content.
+ * WCAG 2.1 SC 2.4.1 (Bypass Blocks).
+ */
+.skip-link {
+  position: absolute;
+  top: -100%;
+  left: var(--space-4);
+  z-index: 9999;
+  padding: var(--space-2) var(--space-4);
+  background-color: var(--color-brand-primary);
+  color: #fff;
+  font-weight: var(--font-semibold);
+  font-size: var(--text-sm);
+  border-radius: var(--radius-md);
+  text-decoration: none;
+  /* Transition only opacity/transform so it's smooth but still functional */
+  transition: top var(--transition-fast);
+}
+
+.skip-link:focus,
+.skip-link:focus-visible {
+  top: var(--space-4);
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+}
+
 /* ─── Mobile baseline ─────────────────────────────────────────────────────── */
 html,
 body {

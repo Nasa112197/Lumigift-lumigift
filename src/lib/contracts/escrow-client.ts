@@ -33,6 +33,8 @@ export enum EscrowError {
   AlreadyCancelled = 6,
   InvalidAmount = 7,
   InvalidUnlockTime = 8,
+  /** The supplied token address is not an allowed USDC contract for this network. */
+  InvalidToken = 9,
 }
 
 export class EscrowContractError extends Error {
@@ -43,6 +45,24 @@ export class EscrowContractError extends Error {
 }
 
 // ─── Return types ─────────────────────────────────────────────────────────────
+
+/**
+ * Explicit lifecycle status for the escrow, mirroring the `EscrowStatus` enum
+ * in the Soroban contract (contracts/escrow/src/lib.rs).
+ *
+ * Terminal states (`Claimed`, `Cancelled`) are mutually exclusive and can
+ * never transition back to a non-terminal state.
+ */
+export enum EscrowStatus {
+  /** Funds are locked; the unlock time has not been reached. */
+  Locked = 0,
+  /** The unlock time has passed but the recipient has not yet claimed. */
+  Unlocked = 1,
+  /** The recipient successfully claimed the funds (terminal). */
+  Claimed = 2,
+  /** The sender cancelled the escrow and funds were returned (terminal). */
+  Cancelled = 3,
+}
 
 export interface EscrowState {
   recipient: string; // Stellar public key (G…)
@@ -177,6 +197,46 @@ export class EscrowClient {
     return decodeGetStateResult(returnVal);
   }
 
+  // ── get_status ────────────────────────────────────────────────────────────────
+
+  /**
+   * Simulates `get_status` and returns the explicit `EscrowStatus` enum value.
+   *
+   * This is the preferred method for backend reconciliation over `getState`
+   * because it returns a single unambiguous lifecycle status:
+   *
+   * - `EscrowStatus.Locked`    — funds locked, unlock time not yet reached
+   * - `EscrowStatus.Unlocked`  — unlock time reached, not yet claimed
+   * - `EscrowStatus.Claimed`   — funds transferred to recipient (terminal)
+   * - `EscrowStatus.Cancelled` — sender cancelled, funds returned (terminal)
+   *
+   * Terminal states cannot contradict each other — the contract enforces this.
+   */
+  async getStatus(): Promise<EscrowStatus> {
+    const account = await this.rpc.getAccount(this.opts.sourcePublicKey);
+
+    const tx = new TransactionBuilder(account, {
+      fee: BASE_FEE,
+      networkPassphrase: this.opts.networkPassphrase,
+    })
+      .addOperation(this.contract.call("get_status"))
+      .setTimeout(30)
+      .build();
+
+    const simResult = await this.rpc.simulateTransaction(tx);
+    if (SorobanRpc.Api.isSimulationError(simResult)) {
+      throw parseContractError(simResult.error);
+    }
+
+    const returnVal = (simResult as SorobanRpc.Api.SimulateTransactionSuccessResponse).result
+      ?.retval;
+    if (!returnVal) {
+      throw new Error("get_status simulation returned no value");
+    }
+
+    return decodeGetStatusResult(returnVal);
+  }
+
   // ── submitTransaction ────────────────────────────────────────────────────────
 
   /**
@@ -229,6 +289,19 @@ function decodeGetStateResult(val: xdr.ScVal): EscrowState {
     unlockTime: BigInt(scValToNative(unlockTimeVal) as number | bigint),
     claimed: scValToNative(claimedVal) as boolean,
   };
+}
+
+function decodeGetStatusResult(val: xdr.ScVal): EscrowStatus {
+  // get_status returns an EscrowStatus enum — Soroban encodes it as a u32 ScVal.
+  const native = scValToNative(val) as number;
+  switch (native) {
+    case 0: return EscrowStatus.Locked;
+    case 1: return EscrowStatus.Unlocked;
+    case 2: return EscrowStatus.Claimed;
+    case 3: return EscrowStatus.Cancelled;
+    default:
+      throw new Error(`Unknown EscrowStatus value: ${native}`);
+  }
 }
 
 function parseContractError(errorMsg: string): EscrowContractError | Error {
