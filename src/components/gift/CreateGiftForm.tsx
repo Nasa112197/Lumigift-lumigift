@@ -13,7 +13,7 @@ import {
   type ApiErrorState,
 } from "@/components/ui/ApiErrorBanner";
 import { GiftPreview } from "./GiftPreview";
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useCsrf } from "@/hooks/useCsrf";
 import { formatNGN } from "@/lib/currency";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
@@ -28,6 +28,10 @@ export function CreateGiftForm() {
   const [showUnregisteredWarning, setShowUnregisteredWarning] = useState(false);
   const [recipientRegistered, setRecipientRegistered] = useState<boolean | null>(null);
   const [unlockDstWarning, setUnlockDstWarning] = useState(false);
+
+  // Ref to the submit button that triggers the unregistered-recipient dialog;
+  // focus returns here when the dialog closes.
+  const submitButtonRef = useRef<HTMLButtonElement>(null);
 
   const { csrfFetch } = useCsrf();
   const queryClient = useQueryClient();
@@ -233,7 +237,7 @@ export function CreateGiftForm() {
             </div>
           </div>
         </div>
-      )}
+      </Dialog>
     </>
   );
 }
