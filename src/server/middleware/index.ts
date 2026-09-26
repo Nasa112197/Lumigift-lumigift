@@ -4,6 +4,11 @@ import * as Sentry from "@sentry/nextjs";
 import { authOptions } from "@/lib/auth";
 import { ApiError } from "@/types";
 import { requestLogger, getCorrelationId } from "@/lib/logger";
+import { mapError, AppError } from "@/server/errors";
+
+// Re-export error primitives so route handlers can import from one place
+export { AppError } from "@/server/errors";
+export { ERROR_CODES } from "@/server/errors";
 
 // Re-export CSRF middleware so callers can import from one place
 export { withCsrf } from "@/lib/csrf";
@@ -26,7 +31,16 @@ export function withAuth(handler: Handler): Handler {
 
 const API_VERSION = "v1";
 
-/** Wraps a route handler with a try/catch — returns 500 on unhandled errors. */
+/**
+ * Wraps a route handler with error handling that:
+ *  1. Extracts / generates a correlation ID from the `x-correlation-id` header.
+ *  2. Maps thrown errors to stable public codes via {@link mapError}.
+ *  3. Logs the full internal error (including stack trace) to Pino + Sentry,
+ *     tagged with the correlation ID so every log line is traceable.
+ *  4. Returns a sanitised response body — no stack traces or provider secrets
+ *     ever reach the client.
+ *  5. Attaches `x-correlation-id` and `X-API-Version` to every response.
+ */
 export function withErrorHandler(handler: Handler): Handler {
   return async (req, context) => {
     const correlationId = getCorrelationId(req.headers);
@@ -37,10 +51,35 @@ export function withErrorHandler(handler: Handler): Handler {
       res.headers.set("x-correlation-id", correlationId);
       return res;
     } catch (err) {
-      log.error({ err }, "[API Error]");
+      const mapped = mapError(err);
+
+      // Log full internal error server-side — stack + cause never leave the server
+      if (mapped.code === "INTERNAL_ERROR") {
+        log.error({ err, correlationId, path: req.nextUrl.pathname }, "[API] Unhandled error");
+        // Report unexpected errors to Sentry with correlation ID for tracing
+        Sentry.withScope((scope) => {
+          scope.setTag("correlationId", correlationId);
+          scope.setTag("path", req.nextUrl.pathname);
+          scope.setExtra("url", req.url);
+          Sentry.captureException(err);
+        });
+      } else {
+        // Known/expected error — log at warn level with correlation ID
+        log.warn(
+          { code: mapped.code, status: mapped.status, correlationId, err },
+          "[API] Application error"
+        );
+      }
+
       const res = NextResponse.json<ApiError>(
-        { success: false, error: "Internal server error", code: "INTERNAL_ERROR" },
-        { status: 500 }
+        {
+          success: false,
+          error: mapped.publicMessage,
+          code: mapped.code,
+          // correlationId in the body makes it easy for clients to report issues
+          ...(correlationId ? { correlationId } : {}),
+        } as ApiError & { correlationId?: string },
+        { status: mapped.status }
       );
       res.headers.set("X-API-Version", API_VERSION);
       res.headers.set("x-correlation-id", correlationId);

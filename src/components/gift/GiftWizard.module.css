@@ -30,38 +30,17 @@
   margin: 0;
 }
 
-/* ─── Mobile (≤ 480px) ────────────────────────────────────────────────────── */
-@media (max-width: 480px) {
-  .wrapper {
-    gap: var(--space-4);
-  }
-
-  .stepContent {
-    gap: var(--space-4);
-  }
-
-  .stepTitle {
-    font-size: var(--text-xl);
-  }
-
-  /* Stack navigation buttons full-width on small screens */
-  .nav {
-    flex-direction: column-reverse;
-    padding-top: var(--space-3);
-  }
-
-  .nav > * {
-    width: 100%;
-  }
-}
-
-/* ─── Extra-small (≤ 320px) ───────────────────────────────────────────────── */
-@media (max-width: 320px) {
-  .stepTitle {
-    font-size: var(--text-lg);
-  }
-
-  .stepContent {
-    gap: var(--space-3);
-  }
+/*
+ * Unknown outcome — shown when the connection dropped mid-flight and we
+ * cannot confirm whether the server received the request.
+ * Intentionally amber/warning rather than red to signal ambiguity.
+ */
+.unknownOutcome {
+  font-size: var(--text-sm);
+  color: var(--color-warning, #d97706);
+  background-color: rgba(217, 119, 6, 0.08);
+  border: 1px solid rgba(217, 119, 6, 0.3);
+  border-radius: var(--radius-md, 8px);
+  padding: var(--space-3) var(--space-4);
+  margin: 0;
 }

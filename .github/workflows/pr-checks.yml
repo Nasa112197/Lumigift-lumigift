@@ -9,10 +9,10 @@ jobs:
     name: Validate PR
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6.0.2
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Check PR title follows Conventional Commits
-        uses: amannn/action-semantic-pull-request@v6
+        uses: amannn/action-semantic-pull-request@0223d9c76a4e5e8fc0c25ccfe4efdb18b7e8e71d # v6
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
