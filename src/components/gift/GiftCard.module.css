@@ -10,6 +10,9 @@
     border-color var(--transition-base),
     box-shadow var(--transition-base);
   cursor: pointer;
+  /* Prevent the card itself from creating horizontal overflow */
+  min-width: 0;
+  overflow: hidden;
 }
 
 .card:hover {
@@ -29,12 +32,19 @@
   align-items: center;
   justify-content: space-between;
   gap: var(--space-3);
+  /* Allow badge to wrap under name on very narrow screens */
+  flex-wrap: wrap;
 }
 
 .name {
   font-size: var(--text-sm);
   font-weight: var(--font-semibold);
   color: var(--color-text-secondary);
+  /* Truncate long names instead of overflowing */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
 }
 
 .amount {
@@ -51,6 +61,8 @@
 .meta {
   font-size: var(--text-xs);
   color: var(--color-text-muted);
+  /* Allow long dates / hashes to wrap */
+  word-break: break-word;
 }
 
 .message {
@@ -59,4 +71,35 @@
   line-height: var(--leading-relaxed);
   border-left: 2px solid var(--color-brand-primary);
   padding-left: var(--space-3);
+  /* Prevent long messages from overflowing */
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+
+/* ─── Mobile (≤ 480px) ────────────────────────────────────────────────────── */
+@media (max-width: 480px) {
+  .card {
+    padding: var(--space-4);
+    border-radius: var(--radius-lg);
+  }
+
+  .amount {
+    font-size: var(--text-xl);
+  }
+}
+
+/* ─── Extra-small (≤ 320px) ───────────────────────────────────────────────── */
+@media (max-width: 320px) {
+  .card {
+    padding: var(--space-3);
+  }
+
+  .header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .amount {
+    font-size: var(--text-lg);
+  }
 }
