@@ -35,7 +35,19 @@ const STEP_REVIEW = 4;
 type MutationOutcome = "idle" | "pending" | "unknown" | "error" | "success";
 
 export function GiftWizard() {
-  const [step, setStep] = useState(STEP_OCCASION);
+  const { readDraft, saveDraft, clearDraft } = useGiftDraft();
+
+  // Initialise step from draft (if available) so the wizard resumes after refresh
+  const [step, setStep] = useState<number>(() => {
+    const draft = readDraft();
+    // Never restore directly to the review step — require the user to
+    // complete the flow again so no stale data is submitted.
+    if (draft && draft.step > STEP_OCCASION && draft.step < STEP_REVIEW) {
+      return draft.step;
+    }
+    return STEP_OCCASION;
+  });
+
   const [template, setTemplate] = useState<GiftTemplate>(BLANK_TEMPLATE);
   const [error, setError] = useState<string | null>(null);
   const [mutationOutcome, setMutationOutcome] = useState<MutationOutcome>("idle");
@@ -43,6 +55,8 @@ export function GiftWizard() {
   const { isOnline } = useNetworkStatus();
 
   const queryClient = useQueryClient();
+
+  const draft = readDraft();
 
   const {
     register,
@@ -53,7 +67,16 @@ export function GiftWizard() {
     formState: { errors },
   } = useForm<CreateGiftFormInput>({
     resolver: zodResolver(createGiftSchema),
-    defaultValues: { paymentProvider: "paystack", recipientIsRegistered: false },
+    defaultValues: {
+      paymentProvider: "paystack",
+      recipientIsRegistered: false,
+      // Restore safe draft fields — phone is intentionally excluded
+      recipientName: draft?.recipientName ?? "",
+      recipientEmail: draft?.recipientEmail ?? "",
+      amountNgn: draft?.amountNgn,
+      message: draft?.message ?? "",
+      unlockAt: draft?.unlockAt ?? "",
+    },
     mode: "onTouched",
   });
 
@@ -71,7 +94,9 @@ export function GiftWizard() {
     if (tpl.suggestedMessage) {
       setValue("message", tpl.suggestedMessage);
     }
-    setStep(STEP_RECIPIENT);
+    const next = STEP_RECIPIENT;
+    persistDraft(next);
+    setStep(next);
   }
 
   async function next(fields: (keyof CreateGiftFormInput)[]) {
@@ -83,7 +108,9 @@ export function GiftWizard() {
   }
 
   function back() {
-    setStep((s) => Math.max(0, s - 1));
+    const prevStep = Math.max(0, step - 1);
+    persistDraft(prevStep);
+    setStep(prevStep);
   }
 
   const doSubmit = useCallback(
@@ -175,6 +202,10 @@ export function GiftWizard() {
             error={errors.recipientName?.message}
             {...register("recipientName")}
           />
+          {/*
+           * Phone is intentionally NOT pre-filled from the draft.
+           * Raw phone numbers must never be persisted (issue #33 security rule).
+           */}
           <Input
             label="Recipient's Phone"
             type="tel"
@@ -261,7 +292,10 @@ export function GiftWizard() {
           <GiftPreviewCard
             data={getValues()}
             template={template}
-            onEdit={(targetStep) => setStep(targetStep)}
+            onEdit={(targetStep) => {
+              persistDraft(targetStep);
+              setStep(targetStep);
+            }}
           />
 
           {/* Distinguish "unknown outcome" (connectivity drop mid-flight) from
