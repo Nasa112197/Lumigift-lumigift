@@ -30,3 +30,26 @@
   font-size: var(--text-sm);
   color: var(--color-error);
 }
+
+.attemptWarning {
+  font-size: var(--text-sm);
+  color: var(--color-warning, #d97706);
+}
+
+/* Resend countdown / button wrapper */
+.resendWrapper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2rem; /* prevent layout shift when switching between countdown and button */
+}
+
+.resendCountdown {
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+}
+
+.resendTimer {
+  font-weight: var(--font-semibold, 600);
+  font-variant-numeric: tabular-nums; /* prevent width jitter as seconds tick */
+}

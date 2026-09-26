@@ -1,16 +1,71 @@
 /**
  * Typed Soroban contract event shapes for the Lumigift escrow contract.
  *
- * The contract emits three events:
+ * ## Event schema (v1)
  *
- *   initialized  → topic: ["initialized"]
- *                  data:  (sender: Address, recipient: Address, amount: i128, unlock_time: u64)
+ * The escrow contract emits four events. All payloads are encoded as a
+ * `ScVec` in the `data` field of the Soroban `ContractEvent`.
+ * Topics are `Symbol` values used for filtering.
  *
- *   claimed      → topic: ["claimed"]
- *                  data:  (recipient: Address, amount: i128)
+ * ### `initialized`
+ * Emitted by `initialize()` — escrow created and funded.
  *
- *   cancelled    → topic: ["cancelled"]
- *                  data:  (sender: Address, amount: i128)
+ * ```
+ * topics: ["initialized"]
+ * data:   ScVec [sender: ScAddress, recipient: ScAddress, amount: I128, unlock_time: U64]
+ * ```
+ *
+ * | Index | Soroban type | Description                          |
+ * |-------|--------------|--------------------------------------|
+ * | 0     | ScAddress    | sender — address that created gift   |
+ * | 1     | ScAddress    | recipient — address to claim funds   |
+ * | 2     | I128         | amount in USDC stroops               |
+ * | 3     | U64          | unlock_time Unix timestamp (seconds) |
+ *
+ * ### `claimed`
+ * Emitted by `claim()` — recipient successfully claimed funds (terminal).
+ *
+ * ```
+ * topics: ["claimed"]
+ * data:   ScVec [recipient: ScAddress, amount: I128]
+ * ```
+ *
+ * | Index | Soroban type | Description                             |
+ * |-------|--------------|---------------------------------------------|
+ * | 0     | ScAddress    | recipient — address that received funds |
+ * | 1     | I128         | amount transferred in USDC stroops      |
+ *
+ * ### `cancelled`
+ * Emitted by `cancel()` — sender cancelled, funds returned (terminal).
+ *
+ * ```
+ * topics: ["cancelled"]
+ * data:   ScVec [sender: ScAddress, amount: I128]
+ * ```
+ *
+ * | Index | Soroban type | Description                             |
+ * |-------|--------------|---------------------------------------------|
+ * | 0     | ScAddress    | sender — address that received refund   |
+ * | 1     | I128         | amount refunded in USDC stroops         |
+ *
+ * ### `upgraded` (admin-only, not decoded here)
+ * Emitted by `upgrade()`.
+ *
+ * ```
+ * topics: ["upgraded"]
+ * data:   ScVec [old_contract: ScAddress, new_wasm_hash: Bytes(32)]
+ * ```
+ *
+ * ## Versioning
+ *
+ * Schema version: **v1**. Breaking changes require a new topic name (e.g.
+ * `initialized_v2`). Additive changes that append optional fields must update
+ * this JSDoc and `docs/contract-events.md`.
+ *
+ * ## Full documentation
+ *
+ * See `docs/contract-events.md` for payload tables, example fixtures,
+ * and indexer integration guidance.
  */
 
 import { rpc as SorobanRpc, Address, scValToNative, xdr } from "@stellar/stellar-sdk";

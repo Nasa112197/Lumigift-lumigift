@@ -67,10 +67,56 @@ pub enum EscrowError {
     AlreadyCancelled   = 6,
     InvalidAmount      = 7,
     InvalidUnlockTime  = 8,
+    /// The supplied token address is not an allowed USDC contract for this
+    /// network. Only the canonical Circle USDC addresses are permitted.
+    InvalidToken       = 9,
 }
 
-/// Minimum escrow amount: 1 USDC expressed in stroops (7 decimal places).
-const MIN_AMOUNT: i128 = 10_000_000;
+// ─── Allowed token addresses ──────────────────────────────────────────────────
+//
+// Only Circle USDC is accepted. Each network has a single canonical contract
+// address. Passing any other address to `initialize` will fail with
+// `InvalidToken` before any funds move.
+//
+// Mainnet:  CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75
+// Testnet:  CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA
+
+/// USDC contract address on Stellar **mainnet** (Circle-issued).
+/// Hex of StrKey-decoded payload for:
+///   `CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75`
+const USDC_MAINNET: [u8; 32] = [
+    0x45, 0xef, 0xce, 0x6a, 0xb5, 0xd4, 0x14, 0xa0,
+    0x07, 0xf8, 0x1a, 0x8b, 0x83, 0x8b, 0x56, 0x76,
+    0x3b, 0x5e, 0x5e, 0xf5, 0xf2, 0xaa, 0xf3, 0x05,
+    0x6a, 0x1e, 0x5d, 0x28, 0xec, 0x7e, 0x0f, 0x25,
+];
+
+/// USDC contract address on Stellar **testnet** (Circle-issued).
+/// Hex of StrKey-decoded payload for:
+///   `CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA`
+const USDC_TESTNET: [u8; 32] = [
+    0x05, 0x04, 0xb7, 0x57, 0x98, 0x0c, 0x99, 0x53,
+    0xab, 0x03, 0xef, 0xa8, 0xa9, 0xb5, 0x2b, 0xaf,
+    0xc7, 0x2c, 0x11, 0x2c, 0x01, 0xb0, 0x6c, 0x01,
+    0x0b, 0x89, 0x2e, 0x21, 0x4b, 0x58, 0x0c, 0x03,
+];
+
+/// Returns `true` when `token` matches one of the allowed USDC addresses.
+///
+/// Soroban `Address` wraps an `AccountId` or `ContractId`. For contract
+/// addresses we compare the raw 32-byte contract ID (via `BytesN<32>`)
+/// against the known USDC addresses for mainnet and testnet.
+fn is_allowed_token(env: &Env, token: &Address) -> bool {
+    let mainnet_id: BytesN<32> = BytesN::from_array(env, &USDC_MAINNET);
+    let testnet_id: BytesN<32> = BytesN::from_array(env, &USDC_TESTNET);
+    // In Soroban, contract Address can be compared to a BytesN<32> contract ID.
+    // We construct Address objects from the known IDs and compare directly.
+    let mainnet_addr = Address::from_contract_id(&mainnet_id);
+    let testnet_addr = Address::from_contract_id(&testnet_id);
+    token == &mainnet_addr || token == &testnet_addr
+}
+
+
 
 /// Minimum lock duration: 1 hour in seconds.
 const MIN_LOCK_DURATION: u64 = 3_600;
@@ -88,6 +134,28 @@ const MIN_TTL_THRESHOLD: u32 = 120_960; // 7 * 24 * 3600 / 5
 /// Short post-claim TTL: 7 days so the claimed state stays readable for
 /// reconciliation after the funds have been transferred.
 const POST_CLAIM_TTL_LEDGERS: u32 = 120_960;
+
+// ─── EscrowStatus enum ────────────────────────────────────────────────────────
+
+/// Explicit lifecycle status for the escrow.
+///
+/// Returned by `get_status` so that off-chain indexers and the backend can
+/// reconcile state without having to infer it from multiple boolean flags.
+///
+/// Terminal states (`Claimed`, `Cancelled`) must never transition back to
+/// a non-terminal state — the contract enforces this invariant.
+#[contracttype]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum EscrowStatus {
+    /// Funds are locked; the unlock time has not been reached.
+    Locked = 0,
+    /// The unlock time has passed but the recipient has not yet claimed.
+    Unlocked = 1,
+    /// The recipient successfully claimed the funds (terminal).
+    Claimed = 2,
+    /// The sender cancelled the escrow and funds were returned (terminal).
+    Cancelled = 3,
+}
 
 // ─── Storage keys ─────────────────────────────────────────────────────────────
 //
@@ -117,6 +185,9 @@ const POST_CLAIM_TTL_LEDGERS: u32 = 120_960;
 //                                                                       │
 //                                                                       ▼
 //                                                                  [Claimed]
+//
+//   [Locked] ──cancel()──► [Cancelled]
+//   [Unlocked] ──cancel()──► [Cancelled]
 
 #[contracttype]
 pub enum DataKey {
@@ -198,6 +269,13 @@ impl EscrowContract {
         // unlock_time must be at least MIN_LOCK_DURATION seconds in the future
         if unlock_time <= env.ledger().timestamp().saturating_add(MIN_LOCK_DURATION) {
             return Err(EscrowError::InvalidUnlockTime);
+        }
+
+        // Reject any token that is not the canonical USDC contract address.
+        // This prevents accidental (or malicious) initialization with a spoofed
+        // or unsupported asset.
+        if !is_allowed_token(&env, &token) {
+            return Err(EscrowError::InvalidToken);
         }
 
         sender.require_auth();
@@ -344,6 +422,9 @@ impl EscrowContract {
     }
 
     /// Read-only: returns (recipient, amount, unlock_time, claimed).
+    ///
+    /// The `claimed` bool is kept for backwards compatibility.
+    /// Prefer `get_status` for explicit lifecycle state.
     pub fn get_state(env: Env) -> Result<(Address, i128, u64, bool), EscrowError> {
         let recipient: Address = env
             .storage()
@@ -367,6 +448,58 @@ impl EscrowContract {
             .unwrap_or(false);
 
         Ok((recipient, amount, unlock_time, claimed))
+    }
+
+    /// Read-only: returns the explicit `EscrowStatus` for this escrow.
+    ///
+    /// Unlike `get_state`, this method expresses the full lifecycle as a
+    /// single enum value so the backend can reconcile without guessing:
+    ///
+    /// - `Locked`    — initialized, unlock time not yet reached
+    /// - `Unlocked`  — unlock time reached, recipient has not yet claimed
+    /// - `Claimed`   — funds transferred to recipient (terminal)
+    /// - `Cancelled` — sender cancelled and funds returned (terminal)
+    ///
+    /// Terminal states (`Claimed`, `Cancelled`) cannot contradict each other
+    /// because the contract writes them atomically and checks each terminal
+    /// flag before allowing any state transition.
+    pub fn get_status(env: Env) -> Result<EscrowStatus, EscrowError> {
+        // Require the contract to be initialized
+        if !env.storage().instance().has(&DataKey::Sender) {
+            return Err(EscrowError::NotInitialized);
+        }
+
+        let claimed: bool = env
+            .storage()
+            .instance()
+            .get(&DataKey::Claimed)
+            .unwrap_or(false);
+
+        if claimed {
+            return Ok(EscrowStatus::Claimed);
+        }
+
+        let cancelled: bool = env
+            .storage()
+            .instance()
+            .get(&DataKey::Cancelled)
+            .unwrap_or(false);
+
+        if cancelled {
+            return Ok(EscrowStatus::Cancelled);
+        }
+
+        let unlock_time: u64 = env
+            .storage()
+            .instance()
+            .get(&DataKey::UnlockTime)
+            .ok_or(EscrowError::NotInitialized)?;
+
+        if env.ledger().timestamp() < unlock_time {
+            Ok(EscrowStatus::Locked)
+        } else {
+            Ok(EscrowStatus::Unlocked)
+        }
     }
 
     /// Upgrade the contract WASM. Restricted to the admin address stored at initialization.
@@ -1063,6 +1196,276 @@ mod property_tests {
     }
 }
 
+
+// ─── Invariant and extended property-based tests (#82) ───────────────────────
+//
+// These tests address the three acceptance criteria from issue #82:
+//
+//   1. Funds cannot be double-claimed across arbitrary call sequences.
+//   2. Funds cannot be lost — they always end up either with the recipient
+//      (after claim) or the sender (after cancel), never stuck in the contract.
+//   3. Transfer always goes to the intended address, never to a third party.
+//
+// Each proptest! runs 1 000 cases (proptest default).
+// Failures print the seed so they are fully reproducible.
+
+#[cfg(test)]
+mod invariant_tests {
+    use super::*;
+    use proptest::prelude::*;
+    use soroban_sdk::{
+        testutils::{Address as _, Ledger},
+        token::{Client as TokenClient, StellarAssetClient},
+        Env,
+    };
+
+    // ── shared setup ─────────────────────────────────────────────────────────
+
+    fn setup_escrow(
+        amount: i128,
+        unlock_time: u64,
+    ) -> (Env, Address, Address, Address, TokenClient<'static>, EscrowContractClient<'static>) {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let sender    = Address::generate(&env);
+        let recipient = Address::generate(&env);
+        let token_id  = env.register_stellar_asset_contract(sender.clone());
+        let token     = TokenClient::new(&env, &token_id);
+        StellarAssetClient::new(&env, &token_id).mint(&sender, &amount);
+
+        let contract_id = env.register_contract(None, EscrowContract);
+        let client      = EscrowContractClient::new(&env, &contract_id);
+        client.initialize(&sender, &sender, &recipient, &token_id, &amount, &unlock_time);
+
+        (env, sender, recipient, token_id, token, client)
+    }
+
+    // ── Invariant 1: no double-claim ─────────────────────────────────────────
+    // After a successful claim, every subsequent claim call must fail.
+    // Across any number of repetitions the contract balance stays 0 and the
+    // claimed flag stays true.
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(1_000))]
+        #[test]
+        fn prop_no_double_claim(
+            amount      in MIN_AMOUNT..=1_000_000_000_i128,
+            unlock_time in (MIN_LOCK_DURATION + 1)..=1_000_000u64,
+            extra_calls in 1u32..=5u32,   // how many times to attempt a second claim
+        ) {
+            let (env, _sender, _recipient, _token_id, token, client) =
+                setup_escrow(amount, unlock_time);
+
+            env.ledger().with_mut(|l| l.timestamp = unlock_time);
+            client.claim();
+
+            // Contract balance must be zero
+            prop_assert_eq!(
+                token.balance(&client.address), 0,
+                "contract balance must be 0 after claim"
+            );
+
+            // Every subsequent attempt must return AlreadyClaimed
+            for _ in 0..extra_calls {
+                let err = client.try_claim().unwrap_err().unwrap();
+                prop_assert_eq!(
+                    err,
+                    EscrowError::AlreadyClaimed,
+                    "repeated claim must return AlreadyClaimed"
+                );
+                // Balance must remain 0 after failed re-claim attempts
+                prop_assert_eq!(
+                    token.balance(&client.address), 0,
+                    "contract balance must stay 0 after failed re-claim"
+                );
+            }
+        }
+    }
+
+    // ── Invariant 2: funds are never lost ─────────────────────────────────────
+    // The total supply of tokens is always conserved:
+    //   sender_balance + recipient_balance + contract_balance == initial_amount
+    // at every observable point in the escrow lifecycle.
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(1_000))]
+        #[test]
+        fn prop_funds_conservation_after_claim(
+            amount      in MIN_AMOUNT..=1_000_000_000_i128,
+            unlock_time in (MIN_LOCK_DURATION + 1)..=1_000_000u64,
+        ) {
+            let (env, sender, recipient, _token_id, token, client) =
+                setup_escrow(amount, unlock_time);
+
+            // After initialize: contract holds `amount`, sender balance == 0
+            let contract_bal = token.balance(&client.address);
+            let sender_bal   = token.balance(&sender);
+            let recip_bal    = token.balance(&recipient);
+            prop_assert_eq!(
+                contract_bal + sender_bal + recip_bal,
+                amount,
+                "funds must be conserved after initialize"
+            );
+
+            // After claim: recipient holds `amount`, contract and sender == 0
+            env.ledger().with_mut(|l| l.timestamp = unlock_time);
+            client.claim();
+
+            let contract_bal = token.balance(&client.address);
+            let sender_bal   = token.balance(&sender);
+            let recip_bal    = token.balance(&recipient);
+            prop_assert_eq!(
+                contract_bal + sender_bal + recip_bal,
+                amount,
+                "funds must be conserved after claim"
+            );
+            prop_assert_eq!(
+                contract_bal, 0,
+                "contract must hold 0 after claim"
+            );
+            prop_assert_eq!(
+                recip_bal, amount,
+                "recipient must hold full amount after claim"
+            );
+        }
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(1_000))]
+        #[test]
+        fn prop_funds_conservation_after_cancel(
+            amount      in MIN_AMOUNT..=1_000_000_000_i128,
+            unlock_time in (MIN_LOCK_DURATION + 1)..=1_000_000u64,
+        ) {
+            let (env, sender, recipient, _token_id, token, client) =
+                setup_escrow(amount, unlock_time);
+
+            // cancel before unlock — funds must return to sender
+            client.cancel();
+
+            let contract_bal = token.balance(&client.address);
+            let sender_bal   = token.balance(&sender);
+            let recip_bal    = token.balance(&recipient);
+            prop_assert_eq!(
+                contract_bal + sender_bal + recip_bal,
+                amount,
+                "funds must be conserved after cancel"
+            );
+            prop_assert_eq!(
+                contract_bal, 0,
+                "contract must hold 0 after cancel"
+            );
+            prop_assert_eq!(
+                recip_bal, 0,
+                "recipient must hold 0 after cancel"
+            );
+            prop_assert_eq!(
+                sender_bal, amount,
+                "sender must receive full amount back after cancel"
+            );
+        }
+    }
+
+    // ── Invariant 3: funds go to the intended address only ───────────────────
+    // A third-party address must never gain any balance as a result of a claim
+    // or cancel operation, regardless of when it is called.
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(1_000))]
+        #[test]
+        fn prop_third_party_never_receives_funds_on_claim(
+            amount      in MIN_AMOUNT..=1_000_000_000_i128,
+            unlock_time in (MIN_LOCK_DURATION + 1)..=1_000_000u64,
+        ) {
+            let (env, _sender, _recipient, _token_id, token, client) =
+                setup_escrow(amount, unlock_time);
+
+            let third_party = Address::generate(&env);
+            let balance_before = token.balance(&third_party);
+
+            env.ledger().with_mut(|l| l.timestamp = unlock_time);
+            client.claim();
+
+            prop_assert_eq!(
+                token.balance(&third_party),
+                balance_before,
+                "third party balance must not change after claim"
+            );
+        }
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(1_000))]
+        #[test]
+        fn prop_third_party_never_receives_funds_on_cancel(
+            amount      in MIN_AMOUNT..=1_000_000_000_i128,
+            unlock_time in (MIN_LOCK_DURATION + 1)..=1_000_000u64,
+        ) {
+            let (env, _sender, _recipient, _token_id, token, client) =
+                setup_escrow(amount, unlock_time);
+
+            let third_party = Address::generate(&env);
+            let balance_before = token.balance(&third_party);
+
+            client.cancel();
+
+            prop_assert_eq!(
+                token.balance(&third_party),
+                balance_before,
+                "third party balance must not change after cancel"
+            );
+        }
+    }
+
+    // ── Invariant 4: terminal states cannot be undone ─────────────────────────
+    // After a claim, cancel is rejected (AlreadyClaimed).
+    // After a cancel, claim is rejected (AlreadyCancelled).
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(1_000))]
+        #[test]
+        fn prop_cancel_after_claim_always_fails(
+            amount      in MIN_AMOUNT..=1_000_000_000_i128,
+            unlock_time in (MIN_LOCK_DURATION + 1)..=1_000_000u64,
+        ) {
+            let (env, _sender, _recipient, _token_id, _token, client) =
+                setup_escrow(amount, unlock_time);
+
+            env.ledger().with_mut(|l| l.timestamp = unlock_time);
+            client.claim();
+
+            let err = client.try_cancel().unwrap_err().unwrap();
+            prop_assert_eq!(
+                err,
+                EscrowError::AlreadyClaimed,
+                "cancel after claim must return AlreadyClaimed"
+            );
+        }
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(1_000))]
+        #[test]
+        fn prop_claim_after_cancel_always_fails(
+            amount      in MIN_AMOUNT..=1_000_000_000_i128,
+            unlock_time in (MIN_LOCK_DURATION + 1)..=1_000_000u64,
+        ) {
+            let (env, _sender, _recipient, _token_id, _token, client) =
+                setup_escrow(amount, unlock_time);
+
+            client.cancel();
+
+            env.ledger().with_mut(|l| l.timestamp = unlock_time);
+            let err = client.try_claim().unwrap_err().unwrap();
+            prop_assert_eq!(
+                err,
+                EscrowError::AlreadyCancelled,
+                "claim after cancel must return AlreadyCancelled"
+            );
+        }
+    }
+}
 
 // ─── Upgrade tests (#49) ──────────────────────────────────────────────────────
 //

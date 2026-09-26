@@ -6,17 +6,24 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
+  /* Prevent internal content from causing horizontal overflow */
+  min-width: 0;
+  overflow: hidden;
 }
 
 .header {
   display: flex;
   align-items: center;
   gap: var(--space-4);
+  /* Allow wrapping on very narrow viewports */
+  flex-wrap: wrap;
 }
 
 .emoji {
   font-size: 2.5rem;
   line-height: 1;
+  /* Don't shrink the emoji */
+  flex-shrink: 0;
 }
 
 .occasion {
@@ -33,6 +40,9 @@
   font-weight: var(--font-bold);
   color: var(--color-text-primary);
   margin: var(--space-1) 0 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .amount {
@@ -42,6 +52,8 @@
   padding: var(--space-4) 0;
   border-top: 1px solid var(--color-border-subtle);
   border-bottom: 1px solid var(--color-border-subtle);
+  /* Avoid overflow on tiny screens */
+  word-break: break-all;
 }
 
 .row {
@@ -50,12 +62,15 @@
   gap: var(--space-3);
   font-size: var(--text-sm);
   color: var(--color-text-primary);
+  /* Allow value text to wrap rather than overflow */
+  flex-wrap: wrap;
 }
 
 .rowLabel {
   font-size: var(--text-xs);
   color: var(--color-text-muted);
   min-width: 4rem;
+  flex-shrink: 0;
 }
 
 .edit {
@@ -68,6 +83,10 @@
   padding: var(--space-1) var(--space-2);
   border-radius: var(--radius-sm);
   transition: background-color var(--transition-fast);
+  /* Ensure 44px minimum tap target */
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
 }
 
 .edit:hover {
@@ -82,6 +101,8 @@
   color: var(--color-text-secondary);
   font-style: italic;
   position: relative;
+  overflow-wrap: break-word;
+  word-break: break-word;
 }
 
 .message p {
@@ -99,6 +120,42 @@
   margin: 0;
   padding-top: var(--space-2);
   border-top: 1px solid var(--color-border-subtle);
+}
+
+/* ─── Mobile (≤ 480px) ────────────────────────────────────────────────────── */
+@media (max-width: 480px) {
+  .card {
+    padding: var(--space-4);
+    border-radius: var(--radius-xl);
+  }
+
+  .amount {
+    font-size: var(--text-2xl);
+  }
+
+  .to {
+    font-size: var(--text-base);
+  }
+}
+
+/* ─── Extra-small (≤ 320px) ───────────────────────────────────────────────── */
+@media (max-width: 320px) {
+  .card {
+    padding: var(--space-3);
+    border-radius: var(--radius-lg);
+  }
+
+  .amount {
+    font-size: var(--text-xl);
+  }
+
+  .emoji {
+    font-size: 2rem;
+  }
+
+  .header {
+    gap: var(--space-3);
+  }
 }
 
 @media print {

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useCsrf } from "@/hooks/useCsrf";
 import type { GiftStatus } from "@/types";
 import styles from "./ClaimButton.module.css";
@@ -15,6 +15,7 @@ interface ClaimButtonProps {
 export function ClaimButton({ giftId, recipientStellarKey, onStatusChange }: ClaimButtonProps) {
   const [error, setError] = useState<string | null>(null);
   const { csrfFetch } = useCsrf();
+  const queryClient = useQueryClient();
 
   const { mutate, isPending } = useMutation({
     mutationFn: async () => {
@@ -32,8 +33,12 @@ export function ClaimButton({ giftId, recipientStellarKey, onStatusChange }: Cla
     },
     onSuccess: () => {
       onStatusChange("claimed");
+      // Invalidate the gifts list so the dashboard reflects the claimed status
+      // without requiring a manual reload.
+      queryClient.invalidateQueries({ queryKey: ["gifts"] });
     },
     onError: (err: Error) => {
+      // Revert the optimistic status update on failure so cached data stays valid.
       onStatusChange("unlocked");
       setError(err.message);
     },
