@@ -4,57 +4,103 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { GiftCard } from "@/components/gift/GiftCard";
+import { GiftCardSkeleton } from "@/components/gift/GiftCardSkeleton";
 import styles from "./page.module.css";
 import type { ApiResponse } from "@/types";
-import type { GiftPageOffset } from "@/server/services/gift.service";
+import type { GiftPage } from "@/server/services/gift.service";
 
-const DEFAULT_LIMIT = 10;
+const PAGE_SIZE = 10;
 
-async function fetchGifts(page: number, limit: number): Promise<GiftPageOffset> {
-  const res = await fetch(`/api/v1/gifts?page=${page}&limit=${limit}`);
-  const json: ApiResponse<GiftPageOffset> = await res.json();
+async function fetchGiftsCursor(cursor: string | null, pageSize: number): Promise<GiftPage> {
+  const params = new URLSearchParams({ pageSize: String(pageSize) });
+  if (cursor) params.set("cursor", cursor);
+  const res = await fetch(`/api/v1/gifts?${params.toString()}`);
+  const json: ApiResponse<GiftPage> = await res.json();
   if (!json.success) throw new Error(json.error);
   return json.data;
 }
 
 export default function DashboardPage() {
-  const [page, setPage] = useState(1);
+  // Stack of cursors visited — index 0 is always null (first page).
+  const [cursorStack, setCursorStack] = useState<Array<string | null>>([null]);
+  const [stackIndex, setStackIndex] = useState(0);
 
-  const { data, status } = useQuery({
-    queryKey: ["gifts", page],
-    queryFn: () => fetchGifts(page, DEFAULT_LIMIT),
+  const cursor = cursorStack[stackIndex];
+  const pageNumber = stackIndex + 1;
+
+  const { data, status, isFetching, isStale, refetch } = useQuery({
+    queryKey: ["gifts", "cursor", cursor],
+    queryFn: () => fetchGiftsCursor(cursor, PAGE_SIZE),
   });
 
+  const canGoNext = Boolean(data?.nextCursor) && !isFetching;
+  const canGoPrev = stackIndex > 0 && !isFetching;
+
+  function goNext() {
+    if (!data?.nextCursor) return;
+    const newStack = [...cursorStack.slice(0, stackIndex + 1), data.nextCursor];
+    setCursorStack(newStack);
+    setStackIndex((i) => i + 1);
+  }
+
+  function goPrev() {
+    if (stackIndex === 0) return;
+    setStackIndex((i) => i - 1);
+  }
+
+  // ── Loading (initial fetch) ──────────────────────────────────────────────
   if (status === "pending") {
     return (
       <div className={styles.page}>
         <div className="container">
-          <p>Loading gifts…</p>
+          <h1 className={styles.title}>Your Gifts</h1>
+          <div className={styles.grid} aria-live="polite" aria-busy="true">
+            <GiftCardSkeleton count={PAGE_SIZE} />
+          </div>
         </div>
       </div>
     );
   }
 
+  // ── Error / failed fetch ─────────────────────────────────────────────────
   if (status === "error") {
     return (
       <div className={styles.page}>
         <div className="container">
-          <p>Failed to load gifts. Please try again.</p>
+          <h1 className={styles.title}>Your Gifts</h1>
+          <div className={styles.errorState} role="alert">
+            <p className={styles.errorMessage}>Failed to load your gifts. Please try again.</p>
+            <button
+              className="btn btn--secondary"
+              onClick={() => refetch()}
+              aria-label="Retry loading gifts"
+            >
+              Retry
+            </button>
+          </div>
         </div>
       </div>
     );
   }
 
-  const { data: gifts, total, totalPages } = data!;
+  const { gifts, total, nextCursor } = data!;
 
   return (
     <div className={styles.page}>
       <div className="container">
         <h1 className={styles.title}>Your Gifts</h1>
 
-        {gifts.length === 0 ? (
-          <div className={styles.empty}>
-            <div className={styles.emptyIconWrapper}>
+        {/* Stale/background-revalidation banner */}
+        {isStale && isFetching && (
+          <p className={styles.staleBanner} aria-live="polite" aria-atomic="true">
+            Refreshing…
+          </p>
+        )}
+
+        {gifts.length === 0 && stackIndex === 0 ? (
+          // ── Empty state ───────────────────────────────────────────────────
+          <div className={styles.empty} role="status" aria-label="No gifts found">
+            <div className={styles.emptyIconWrapper} aria-hidden="true">
               <svg
                 xmlns="http://www.w3.org/2000/svg"
                 width="40"
@@ -83,33 +129,43 @@ export default function DashboardPage() {
         ) : (
           <>
             <p className={styles.count}>
-              Showing {(page - 1) * DEFAULT_LIMIT + 1}–{Math.min(page * DEFAULT_LIMIT, total)} of{" "}
-              {total} gifts
+              Page {pageNumber} · {total} gift{total !== 1 ? "s" : ""} total
             </p>
-            <div className={styles.grid}>
-              {gifts.map((gift) => (
-                <GiftCard key={gift.id} gift={gift} perspective="sender" />
-              ))}
+
+            {/* Skeleton replaces grid while fetching next/prev page */}
+            <div className={styles.grid} aria-live="polite" aria-busy={isFetching}>
+              {isFetching ? (
+                <GiftCardSkeleton count={PAGE_SIZE} />
+              ) : (
+                gifts.map((gift) => <GiftCard key={gift.id} gift={gift} perspective="sender" />)
+              )}
             </div>
-            <div className={styles.loadMore}>
+
+            <nav className={styles.pagination} aria-label="Gift history pagination">
               <button
                 className="btn btn--secondary"
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
-                disabled={page === 1}
+                onClick={goPrev}
+                disabled={!canGoPrev}
+                aria-label="Previous page"
+                aria-disabled={!canGoPrev}
               >
-                Previous
+                ← Previous
               </button>
-              <span>
-                Page {page} of {totalPages}
+
+              <span aria-live="polite" aria-atomic="true">
+                Page {pageNumber}
               </span>
+
               <button
                 className="btn btn--secondary"
-                onClick={() => setPage((p) => p + 1)}
-                disabled={page >= totalPages}
+                onClick={goNext}
+                disabled={!canGoNext}
+                aria-label={nextCursor ? "Next page" : "No more pages"}
+                aria-disabled={!canGoNext}
               >
-                Next
+                Next →
               </button>
-            </div>
+            </nav>
           </>
         )}
       </div>

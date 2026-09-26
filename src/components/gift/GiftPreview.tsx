@@ -1,10 +1,10 @@
 "use client";
 
-import { format } from "date-fns";
 import type { CreateGiftInput } from "@/types/schemas";
 import { Button } from "@/components/ui/Button";
 import { ApiErrorBanner, type ApiErrorState } from "@/components/ui/ApiErrorBanner";
 import { formatNGN, formatUSDC } from "@/lib/currency";
+import { formatUnlockDate } from "@/lib/dateFormat";
 import styles from "./GiftPreview.module.css";
 
 interface GiftPreviewProps {
@@ -28,7 +28,7 @@ export function GiftPreview({
   loading,
   apiError,
 }: GiftPreviewProps) {
-  const unlockDate = format(new Date(data.unlockAt), "MMM d, yyyy 'at' h:mm a");
+  const unlockDate = formatUnlockDate(data.unlockAt);
   const usdcLabel =
     usdcEquivalent === "—" || usdcEquivalent === "…" ? usdcEquivalent : formatUSDC(usdcEquivalent);
 
