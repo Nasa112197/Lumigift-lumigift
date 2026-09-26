@@ -75,8 +75,11 @@ export function GiftWizard() {
   }
 
   async function next(fields: (keyof CreateGiftFormInput)[]) {
+    if (navigating) return;
+    setNavigating(true);
     const valid = await trigger(fields);
     if (valid) setStep((s) => s + 1);
+    setNavigating(false);
   }
 
   function back() {
@@ -190,7 +193,9 @@ export function GiftWizard() {
             <Button variant="secondary" onClick={back}>
               Back
             </Button>
-            <Button onClick={() => next(["recipientName", "recipientPhone"])}>Next</Button>
+            <Button onClick={() => next(["recipientName", "recipientPhone"])} loading={navigating}>
+              Next
+            </Button>
           </div>
         </div>
       )}
@@ -223,7 +228,9 @@ export function GiftWizard() {
             <Button variant="secondary" onClick={back}>
               Back
             </Button>
-            <Button onClick={() => next(["amountNgn"])}>Next</Button>
+            <Button onClick={() => next(["amountNgn"])} loading={navigating}>
+              Next
+            </Button>
           </div>
         </div>
       )}
@@ -241,7 +248,9 @@ export function GiftWizard() {
             <Button variant="secondary" onClick={back}>
               Back
             </Button>
-            <Button onClick={() => next(["unlockAt"])}>Review Gift</Button>
+            <Button onClick={() => next(["unlockAt"])} loading={navigating}>
+              Review Gift
+            </Button>
           </div>
         </div>
       )}
