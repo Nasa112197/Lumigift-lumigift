@@ -7,6 +7,11 @@ import type { CreateGiftInput } from "@/types/schemas";
 import { Input } from "@/components/ui/Input";
 import { Textarea } from "@/components/ui/Textarea";
 import { Button } from "@/components/ui/Button";
+import {
+  ApiErrorBanner,
+  classifyApiError,
+  type ApiErrorState,
+} from "@/components/ui/ApiErrorBanner";
 import { GiftPreview } from "./GiftPreview";
 import { useState } from "react";
 import { useCsrf } from "@/hooks/useCsrf";
@@ -87,7 +92,7 @@ export function CreateGiftForm() {
           return; // Don't proceed to preview yet
         }
       } else {
-        // If check fails, assume registered to not block
+        // If check fails, assume registered to not block the happy path
         setRecipientRegistered(true);
       }
 
@@ -98,7 +103,7 @@ export function CreateGiftForm() {
         setUsdcEquivalent(json.data?.usdc ?? "—");
       }
     } catch {
-      // non-critical — preview still shows without USDC estimate
+      // Exchange-rate is non-critical — preview still shows without USDC estimate
     }
     setStep("preview");
     setLoading(false);
@@ -106,10 +111,8 @@ export function CreateGiftForm() {
 
   const onProceedUnregistered = async () => {
     setShowUnregisteredWarning(false);
-    // Now proceed to fetch exchange rate and preview
     try {
       const data = getValues();
-      // GET — no CSRF needed
       const res = await fetch(`/api/v1/exchange-rate?ngn=${data.amountNgn}`);
       if (res.ok) {
         const json = await res.json();
@@ -129,6 +132,11 @@ export function CreateGiftForm() {
     setError(null);
     const data = getValues();
     createGiftMutation.mutate(data);
+  };
+
+  const handleRetry = () => {
+    setApiError(null);
+    onConfirm();
   };
 
   if (step === "preview") {

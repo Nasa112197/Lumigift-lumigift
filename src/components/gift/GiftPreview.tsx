@@ -2,6 +2,7 @@
 
 import type { CreateGiftInput } from "@/types/schemas";
 import { Button } from "@/components/ui/Button";
+import { ApiErrorBanner, type ApiErrorState } from "@/components/ui/ApiErrorBanner";
 import { formatNGN, formatUSDC } from "@/lib/currency";
 import { formatUnlockDate } from "@/lib/dateFormat";
 import styles from "./GiftPreview.module.css";
@@ -11,8 +12,11 @@ interface GiftPreviewProps {
   usdcEquivalent: string;
   onEdit: () => void;
   onConfirm: () => void;
+  /** Called when the user clicks the retry button inside the error banner */
+  onRetry?: () => void;
   loading: boolean;
-  error: string | null;
+  /** Structured error state — replaces the old plain-string error prop */
+  apiError?: ApiErrorState | null;
 }
 
 export function GiftPreview({
@@ -20,8 +24,9 @@ export function GiftPreview({
   usdcEquivalent,
   onEdit,
   onConfirm,
+  onRetry,
   loading,
-  error,
+  apiError,
 }: GiftPreviewProps) {
   const unlockDate = formatUnlockDate(data.unlockAt);
   const usdcLabel =
@@ -60,7 +65,7 @@ export function GiftPreview({
         )}
       </dl>
 
-      {error && <p className={styles.error}>{error}</p>}
+      {apiError && <ApiErrorBanner error={apiError} onRetry={onRetry} />}
 
       <div className={styles.actions}>
         <Button variant="secondary" onClick={onEdit} disabled={loading}>
