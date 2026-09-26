@@ -90,7 +90,7 @@
     "jest-environment-jsdom": "^30.4.1",
     "license-checker": "25.0.1",
     "lint-staged": "^17.0.5",
-    "prettier": "^3.8.3",
+    "prettier": "^3.9.6",
     "react-dom": "^19.2.6",
     "ts-node": "^10.9.2",
     "typedoc": "^0.28.20",
