@@ -358,3 +358,259 @@ Create a dashboard with these queries:
 
 The logger redacts the following fields before shipping:
 `phone`, `recipientPhone`, `recipientPhoneHash`, `authorization`, `cookie`.
+
+---
+
+## Escrow Contract Recovery
+
+> **Scope**: Lumigift uses a Soroban escrow contract on Stellar to time-lock USDC gifts.
+> This section covers recovery procedures for stuck or failed contract operations.
+
+### State Machine Reference
+
+The on-chain escrow state machine has three states:
+
+| State            | Meaning                                                    |
+| ---------------- | ---------------------------------------------------------- |
+| `NotInitialized` | Contract deployed but `initialize` not yet called          |
+| `Initialized`    | USDC locked; waiting for `unlock_time`                     |
+| `Claimed`        | Recipient called `claim`; USDC transferred                 |
+| `Cancelled`      | Sender called `cancel` before `unlock_time`; USDC returned |
+
+Query current state:
+
+```bash
+stellar contract invoke \
+  --id $STELLAR_ESCROW_CONTRACT_ID \
+  --network $STELLAR_NETWORK \
+  -- get_state
+```
+
+---
+
+### Incident: Failed `initialize` (Gift Never Locked)
+
+#### Symptoms
+
+- Gift record in PostgreSQL has `status = 'pending'` or `status = 'funded'`
+- On-chain `get_state` returns `NotInitialized`
+- No Stellar transaction hash recorded for the escrow funding
+
+#### Diagnosis
+
+1. Check the gift record in the DB:
+   ```sql
+   SELECT id, status, stellar_tx_hash, created_at FROM gifts WHERE id = '<gift_id>';
+   ```
+2. Verify on-chain state:
+   ```bash
+   stellar contract invoke --id $STELLAR_ESCROW_CONTRACT_ID --network testnet -- get_state
+   ```
+3. Check Stellar Horizon for the deploy transaction:
+   ```bash
+   curl "https://horizon.stellar.org/transactions/$STELLAR_TX_HASH"
+   ```
+4. Check application logs for `EscrowError` or `initialize` failure messages.
+
+#### Resolution
+
+**Option A — Re-initialize (preferred if contract is NotInitialized)**:
+
+1. Confirm USDC has been transferred to the contract address (check Horizon).
+2. Call `initialize` again via the deployment script:
+   ```bash
+   STELLAR_NETWORK=testnet ts-node scripts/deploy-contract.ts
+   ```
+3. Update the DB record with the new transaction hash:
+   ```sql
+   UPDATE gifts SET stellar_tx_hash = '<new_hash>', status = 'locked' WHERE id = '<gift_id>';
+   ```
+
+**Option B — Refund sender (if contract can't be initialized)**:
+
+1. If USDC is stuck in the contract with no way to call `initialize`, escalate to engineering.
+2. A contract upgrade or admin recovery path may be required.
+3. Manually refund the sender from the operations wallet as a last resort.
+
+#### Prevention
+
+- Ensure `initialize` is called atomically with the USDC transfer in the gift creation flow.
+- Monitor for gifts with `status = 'funded'` older than 10 minutes.
+
+---
+
+### Incident: Stuck `claim` (Recipient Cannot Claim)
+
+#### Symptoms
+
+- Unlock time has passed but recipient reports "claim failed"
+- On-chain state is `Initialized` (not `Claimed`)
+- Application logs show `HostError`, `InvokeError`, or timeout from `claim` call
+
+#### Diagnosis
+
+1. Confirm unlock time has passed:
+   ```bash
+   stellar contract invoke --id $STELLAR_ESCROW_CONTRACT_ID --network mainnet -- get_state
+   # Also check unlock_time field
+   ```
+2. Check Stellar network status: https://status.stellar.org/
+3. Review application logs for the failed claim transaction hash.
+4. Check if the transaction was submitted but failed on-chain:
+   ```bash
+   curl "https://horizon.stellar.org/transactions/$FAILED_TX_HASH"
+   ```
+5. Check ledger entry TTL — if the contract entry has expired, `claim` will fail:
+   ```bash
+   stellar contract read --id $STELLAR_ESCROW_CONTRACT_ID --network mainnet
+   ```
+
+#### Resolution
+
+**Case 1 — Transient network error (most common)**:
+
+1. Retry the claim via the API or admin interface.
+2. Claims are idempotent if the contract is still `Initialized`.
+3. If the retry succeeds, update DB:
+   ```sql
+   UPDATE gifts SET status = 'claimed', claimed_at = NOW() WHERE id = '<gift_id>';
+   ```
+
+**Case 2 — Contract TTL expired (ledger entry archived)**:
+
+1. Extend the contract TTL using the Stellar CLI:
+   ```bash
+   stellar contract extend \
+     --id $STELLAR_ESCROW_CONTRACT_ID \
+     --ledgers-to-extend 518400 \
+     --source $STELLAR_SERVER_SECRET_KEY \
+     --network mainnet
+   ```
+2. Retry the claim after TTL extension.
+
+**Case 3 — Recipient key issue**:
+
+1. Verify the recipient Stellar address is funded (minimum 1 XLM reserve).
+2. If not, fund the recipient account before retrying:
+   ```bash
+   stellar account fund --account $RECIPIENT_ADDRESS --network testnet
+   ```
+
+#### Prevention
+
+- Monitor contract TTL and auto-extend via cron before expiry.
+- Alert on gifts with `unlock_time < NOW()` and `status != 'claimed'` after 30 minutes.
+
+---
+
+### Incident: Failed `cancel` (Sender Cannot Reclaim)
+
+#### Symptoms
+
+- Sender requests cancellation before unlock time
+- `cancel` transaction fails or times out
+- On-chain state remains `Initialized`
+
+#### Diagnosis
+
+1. Confirm unlock time has NOT yet passed (cancel is only valid before unlock):
+   ```bash
+   stellar contract invoke --id $STELLAR_ESCROW_CONTRACT_ID --network mainnet -- get_state
+   ```
+2. Verify the caller is the original sender (contract enforces sender-only cancel).
+3. Check for Stellar network congestion or fee issues.
+
+#### Resolution
+
+1. Retry the cancel with an increased fee:
+   ```bash
+   stellar contract invoke \
+     --id $STELLAR_ESCROW_CONTRACT_ID \
+     --source $STELLAR_SERVER_SECRET_KEY \
+     --network mainnet \
+     --fee 10000 \
+     -- cancel
+   ```
+2. If cancel succeeds, update the DB:
+   ```sql
+   UPDATE gifts SET status = 'cancelled', cancelled_at = NOW() WHERE id = '<gift_id>';
+   ```
+3. Verify USDC returned to sender via Horizon:
+   ```bash
+   curl "https://horizon.stellar.org/accounts/$SENDER_ADDRESS"
+   ```
+
+#### No-Duplicate-Transfer Rule
+
+> **Critical**: Never manually transfer USDC to the sender if a `cancel` transaction is pending or has been submitted. Always verify the on-chain state before any manual action to avoid double-refund.
+
+---
+
+### Incident: DB ↔ On-Chain Reconciliation Mismatch
+
+#### Symptoms
+
+- PostgreSQL `gifts.status` does not match on-chain contract state
+- Event indexer has fallen behind or missed events
+- User sees wrong status in dashboard
+
+#### Diagnosis
+
+1. Query DB status for affected gifts:
+   ```sql
+   SELECT id, status, stellar_tx_hash, unlock_time, claimed_at FROM gifts
+   WHERE stellar_tx_hash IS NOT NULL AND status NOT IN ('claimed', 'cancelled')
+   ORDER BY unlock_time DESC LIMIT 20;
+   ```
+2. For each gift, check on-chain state:
+   ```bash
+   stellar contract invoke --id $STELLAR_ESCROW_CONTRACT_ID --network mainnet -- get_state
+   ```
+3. Cross-reference with Stellar event logs:
+   ```bash
+   stellar events \
+     --id $STELLAR_ESCROW_CONTRACT_ID \
+     --network mainnet \
+     --start-ledger <start>
+   ```
+
+#### Resolution
+
+1. **Reconcile manually** for each mismatched gift:
+   - On-chain `Claimed` but DB `locked` → update DB to `claimed`
+   - On-chain `Cancelled` but DB `locked` → update DB to `cancelled`
+   - On-chain `Initialized` but DB `claimed` → investigate double-entry (escalate)
+
+2. **Restart the event indexer** to catch up:
+
+   ```bash
+   # Trigger re-indexing via the cron endpoint
+   curl -X POST https://lumigift.app/api/cron/index-events \
+     -H "Authorization: Bearer $CRON_SECRET"
+   ```
+
+3. **Verify reconciliation**:
+   ```sql
+   -- Should return 0 rows after successful reconciliation
+   SELECT id, status FROM gifts
+   WHERE stellar_tx_hash IS NOT NULL
+     AND status = 'locked'
+     AND unlock_time < NOW() - INTERVAL '1 hour';
+   ```
+
+#### Prevention
+
+- Run reconciliation check daily via cron.
+- Alert if any gift has `unlock_time < NOW() - 30min` and `status = 'locked'`.
+
+---
+
+### Escalation Path for Escrow Incidents
+
+| Scenario                               | Action                                                         |
+| -------------------------------------- | -------------------------------------------------------------- |
+| Contract TTL expired                   | Engineering lead — extend TTL immediately                      |
+| USDC stuck (no valid state transition) | CTO + Engineering — contract upgrade required                  |
+| Double-transfer risk detected          | **STOP ALL OPERATIONS** — escalate to CTO                      |
+| Reconciliation mismatch > 10 gifts     | Engineering on-call — investigate event indexer                |
+| Stellar network outage                 | Monitor https://status.stellar.org/ — no action until restored |

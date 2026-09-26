@@ -22,7 +22,14 @@ export default async function GiftClaimPage({ params, searchParams }: Props) {
   if (!gift) notFound();
 
   return (
-    <main style={{ maxWidth: 480, margin: "4rem auto", padding: "0 1rem" }}>
+    <main
+      style={{
+        maxWidth: 480,
+        margin: "4rem auto",
+        /* horizontal padding keeps content away from viewport edges on small screens */
+        padding: "0 clamp(1rem, 4vw, 1.5rem)",
+      }}
+    >
       <GiftCard gift={gift} perspective="recipient" recipientStellarKey={searchParams.stellarKey} />
     </main>
   );
