@@ -74,10 +74,12 @@ export async function verifyPayment(reference: string): Promise<{
  * Converts a Nigerian Naira amount to kobo (Paystack's smallest currency unit).
  * 1 NGN = 100 kobo.
  *
- * @param ngn - Amount in Nigerian Naira.
- * @returns The equivalent amount in kobo, rounded to the nearest integer.
+ * Delegates to the canonical integer-arithmetic implementation in
+ * `@/lib/currency` (floor rounding — never overstates the charge).
+ * Re-exported here so existing call-sites that import from paystack don't need
+ * to change their import path.
  */
-export const ngnToKobo = (ngn: number) => Math.round(ngn * 100);
+export { ngnToKobo } from "@/lib/currency";
 
 /**
  * Initiates a refund for a Paystack transaction.
