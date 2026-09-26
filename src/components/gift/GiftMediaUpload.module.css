@@ -1,0 +1,96 @@
+/* GiftMediaUpload.module.css */
+
+.wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  width: 100%;
+}
+
+/* ── Hidden native file input ──────────────────────────────────────────────── */
+.hiddenInput {
+  /* Visually hidden but not removed from DOM so the browser can manage it */
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ── Preview container ─────────────────────────────────────────────────────── */
+.previewContainer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  align-items: flex-start;
+}
+
+/*
+ * Fixed-aspect-ratio wrapper for the preview image.
+ * Using position: relative + a percentage-padding trick ensures the preview
+ * never overflows its container regardless of the source image dimensions.
+ */
+.previewImageWrapper {
+  position: relative;
+  width: 100%;
+  max-width: 480px;
+  aspect-ratio: 3 / 2;
+  overflow: hidden;
+  border-radius: var(--radius-md, 8px);
+  background-color: var(--color-surface-muted, #f3f4f6);
+}
+
+.previewImage {
+  object-fit: cover;
+}
+
+.fileName {
+  font-size: var(--text-xs, 0.75rem);
+  color: var(--color-text-secondary);
+  word-break: break-all; /* prevent long filenames from overflowing */
+  /* Do NOT render raw local paths — only the filename (basename) is shown */
+}
+
+/* ── Placeholder (no image selected) ──────────────────────────────────────── */
+.placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  width: 100%;
+  max-width: 480px;
+  aspect-ratio: 3 / 2;
+  border: 2px dashed var(--color-border, #d1d5db);
+  border-radius: var(--radius-md, 8px);
+  color: var(--color-text-tertiary, #9ca3af);
+  font-size: var(--text-sm);
+}
+
+/* ── Error message ─────────────────────────────────────────────────────────── */
+.errorMessage {
+  font-size: var(--text-sm);
+  color: var(--color-error);
+  background-color: rgba(239, 68, 68, 0.08);
+  border: 1px solid rgba(239, 68, 68, 0.25);
+  border-radius: var(--radius-sm, 4px);
+  padding: var(--space-2) var(--space-3);
+}
+
+/* ── Hint text ─────────────────────────────────────────────────────────────── */
+.hint {
+  font-size: var(--text-xs, 0.75rem);
+  color: var(--color-text-tertiary, #9ca3af);
+}
+
+/* ── Mobile (≤ 375px) ──────────────────────────────────────────────────────── */
+@media (max-width: 375px) {
+  .previewImageWrapper,
+  .placeholder {
+    max-width: 100%;
+  }
+}

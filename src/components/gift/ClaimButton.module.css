@@ -26,3 +26,10 @@
   font-size: var(--text-xs);
   color: var(--color-error, #e53e3e);
 }
+
+/* ─── Mobile: full-width claim button ────────────────────────────────────── */
+@media (max-width: 480px) {
+  .wrapper button {
+    width: 100%;
+  }
+}

@@ -1,11 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { format } from "date-fns";
 import { useRouter } from "next/navigation";
 import type { Gift, GiftStatus } from "@/types";
 import { GiftStatusBadge } from "@/components/ui/GiftStatusBadge";
 import { formatNGN } from "@/lib/currency";
+import { formatUnlockDate } from "@/lib/dateFormat";
 import { ClaimButton } from "./ClaimButton";
 import { ShareGift } from "./ShareGift";
 import styles from "./GiftCard.module.css";
@@ -32,10 +32,7 @@ export function GiftCard({ gift, perspective, recipientStellarKey }: GiftCardPro
   const amountLabel =
     isLocked && perspective === "recipient" ? "amount hidden" : formatNGN(gift.amountNgn);
 
-  const unlockLabel = `${isLocked ? "Unlocks" : "Unlocked"} ${format(
-    new Date(gift.unlockAt),
-    "MMM d, yyyy 'at' h:mm a"
-  )}`;
+  const unlockLabel = `${isLocked ? "Unlocks" : "Unlocked"} ${formatUnlockDate(gift.unlockAt)}`;
 
   const cardLabel = [name, amountLabel, unlockLabel, status].join(", ");
 

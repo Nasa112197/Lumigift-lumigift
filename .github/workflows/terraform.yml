@@ -18,9 +18,9 @@ jobs:
         working-directory: infra/terraform
 
     steps:
-      - uses: actions/checkout@v6.0.2
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      - uses: hashicorp/setup-terraform@v4
+      - uses: hashicorp/setup-terraform@651471c36a6092792c552e8b1bef71e592b462d8 # v4
         with:
           terraform_version: "1.6"
           # Set TF_API_TOKEN secret in GitHub Actions for Terraform Cloud remote state
@@ -46,7 +46,7 @@ jobs:
         continue-on-error: true
 
       - name: Post plan to PR
-        uses: actions/github-script@v9
+      - uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v9
         with:
           script: |
             const output = `#### Terraform Plan 📖
