@@ -74,6 +74,41 @@ export interface Notification {
   createdAt: Date;
 }
 
+// ─── Notification Preferences ─────────────────────────────────────────────────
+
+/** Supported delivery channels for notifications. */
+export type NotificationChannel = "sms" | "email" | "push";
+
+/**
+ * Notification categories.
+ * - `security`  : Mandatory. Always delivered regardless of user preferences
+ *                 (OTP codes, suspicious-login alerts, etc.).
+ * - `lifecycle` : Transactional messages tied to gift lifecycle events.
+ * - `marketing` : Promotional and engagement messages. Off by default.
+ */
+export type NotificationCategory = "security" | "lifecycle" | "marketing";
+
+/** A single channel × category preference entry. */
+export interface NotificationPreferenceEntry {
+  channel: NotificationChannel;
+  category: NotificationCategory;
+  /** Whether the user has opted in to this channel + category combination. */
+  enabled: boolean;
+}
+
+/**
+ * Full notification preference set for a user.
+ *
+ * Note: `security` category entries are enforced as always-on by the
+ * application layer and cannot be disabled by the user.
+ */
+export interface NotificationPreferences {
+  userId: string;
+  preferences: NotificationPreferenceEntry[];
+  /** Timestamp of the most recent preference change for this user. */
+  updatedAt: Date;
+}
+
 // ─── API Responses ────────────────────────────────────────────────────────────
 export interface ApiSuccess<T> {
   success: true;
