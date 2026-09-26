@@ -1,5 +1,6 @@
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import pool from "@/lib/db";
 import { NextResponse } from "next/server";
 import type { ApiError } from "@/types";
 
@@ -13,10 +14,18 @@ export async function requireAdmin(): Promise<{ userId: string } | NextResponse<
     );
   }
 
-  const userId = (session.user as { id: string }).id;
-  const adminIds = (process.env.ADMIN_USER_IDS ?? "").split(",").filter(Boolean);
+  const userId = (session.user as { id?: string }).id;
+  if (!userId) {
+    return NextResponse.json<ApiError>(
+      { success: false, error: "Forbidden", code: "FORBIDDEN" },
+      { status: 403 }
+    );
+  }
 
-  if (!adminIds.includes(userId)) {
+  const result = await pool.query<{ role: string }>("SELECT role FROM users WHERE id = $1", [
+    userId,
+  ]);
+  if (result.rows[0]?.role !== "admin") {
     return NextResponse.json<ApiError>(
       { success: false, error: "Forbidden", code: "FORBIDDEN" },
       { status: 403 }

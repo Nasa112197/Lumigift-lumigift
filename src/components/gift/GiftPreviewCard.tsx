@@ -1,6 +1,6 @@
-import { format } from "date-fns";
 import type { CreateGiftInput } from "@/types/schemas";
 import type { GiftTemplate } from "@/lib/giftTemplates";
+import { formatUnlockDate } from "@/lib/dateFormat";
 import styles from "./GiftPreviewCard.module.css";
 
 interface GiftPreviewCardProps {
@@ -44,7 +44,7 @@ export function GiftPreviewCard({ data, template, onEdit }: GiftPreviewCardProps
 
       <div className={styles.row}>
         <span className={styles.rowLabel}>Unlocks</span>
-        <span>{unlockDate ? format(unlockDate, "MMM d, yyyy 'at' h:mm a") : "—"}</span>
+        <span>{unlockDate ? formatUnlockDate(unlockDate) : "—"}</span>
         <button type="button" className={styles.edit} onClick={() => onEdit(3)}>
           Edit
         </button>

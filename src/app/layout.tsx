@@ -55,8 +55,12 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       </head>
       <body>
         <Providers>
+          {/* Skip link: keyboard users can bypass the navbar and jump straight to main content */}
+          <a href="#main-content" className="skip-link">
+            Skip to main content
+          </a>
           <Navbar />
-          <main>{children}</main>
+          <main id="main-content">{children}</main>
         </Providers>
       </body>
     </html>
