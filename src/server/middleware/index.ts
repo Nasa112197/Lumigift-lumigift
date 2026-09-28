@@ -4,7 +4,7 @@ import * as Sentry from "@sentry/nextjs";
 import { authOptions } from "@/lib/auth";
 import { ApiError } from "@/types";
 import { requestLogger, getCorrelationId } from "@/lib/logger";
-import { mapError, AppError } from "@/server/errors";
+import { mapError } from "@/server/errors";
 
 // Re-export error primitives so route handlers can import from one place
 export { AppError } from "@/server/errors";
@@ -12,6 +12,10 @@ export { ERROR_CODES } from "@/server/errors";
 
 // Re-export CSRF middleware so callers can import from one place
 export { withCsrf } from "@/lib/csrf";
+
+// Re-export validation helper so callers can import from one place
+export { validateBody } from "./validate";
+export type { ValidationResult, ValidationSuccess, ValidationFailure } from "./validate";
 
 type Handler = (_req: NextRequest, _context?: unknown) => Promise<NextResponse>;
 
