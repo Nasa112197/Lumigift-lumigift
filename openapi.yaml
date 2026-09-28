@@ -4,9 +4,37 @@ info:
   description: |
     REST API for Lumigift — time-locked cash gifts on the Stellar blockchain.
 
-    **Authentication:** Most endpoints require a valid NextAuth.js session cookie.
-    Obtain a session by completing the phone OTP flow (`POST /api/v1/auth/send-otp`
-    followed by NextAuth credentials sign-in).
+    ## Authentication
+
+    Most endpoints require a valid NextAuth.js session cookie.
+    Complete the phone OTP flow to obtain a session:
+
+    1. `POST /api/v1/auth/send-otp` — request an OTP via SMS
+    2. `POST /api/v1/auth/[...nextauth]` — exchange OTP for a session cookie
+
+    The session cookie (`next-auth.session-token`) is set automatically by the
+    browser after a successful sign-in.
+
+    ## CSRF Protection
+
+    All state-mutating requests (`POST`, `PUT`, `DELETE`) must include a valid
+    CSRF token in the `x-csrf-token` header. Obtain the token from
+    `GET /api/v1/csrf`. The `useCsrf` React hook handles this automatically
+    in the frontend.
+
+    ## Response Envelope
+
+    Every response is wrapped in a standard envelope:
+
+    **Success:** `{ "success": true, "data": { ... } }`
+
+    **Error:** `{ "success": false, "error": "message", "code": "ERROR_CODE", "correlationId": "..." }`
+
+    ## Response Headers
+
+    Every response includes:
+    - `X-API-Version: v1` — API version
+    - `x-correlation-id: <id>` — request trace ID (include in bug reports)
 
     **Base URL:** `https://www.lumigift.com`
   version: 1.0.0
@@ -33,6 +61,35 @@ tags:
     description: Internal scheduler endpoints (Bearer token required)
 
 paths:
+  /api/v1/csrf:
+    get:
+      tags: [Auth]
+      summary: Get CSRF token
+      description: |
+        Returns a signed CSRF token scoped to the current session. Include
+        the token in the `x-csrf-token` header on all state-mutating requests
+        (`POST`, `PUT`, `DELETE`). Tokens expire after 1 hour.
+      security:
+        - sessionCookie: []
+      responses:
+        "200":
+          description: CSRF token
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessResponse"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          csrfToken:
+                            type: string
+                            example: "a1b2c3d4..."
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
   /api/v1/auth/send-otp:
     post:
       tags: [Auth]
@@ -487,17 +544,73 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
 
+  /api/v1/cron/reconcile:
+    get:
+      tags: [Cron]
+      summary: Reconcile payment and blockchain state
+      description: |
+        Checks gifts whose payment succeeded but contract deployment is pending.
+        Retries failed deployments and flags irreconcilable gifts for manual review.
+        Requires `Authorization: Bearer <CRON_SECRET>`.
+      security:
+        - cronBearer: []
+      responses:
+        "200":
+          description: Reconciliation run complete
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessResponse"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          processed:
+                            type: integer
+                          durationMs:
+                            type: integer
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/cron/index-events:
+    get:
+      tags: [Cron]
+      summary: Index Soroban contract events
+      description: |
+        Fetches recent events from the Soroban escrow contract and persists them
+        to the database for query performance. Requires `Authorization: Bearer <CRON_SECRET>`.
+      security:
+        - cronBearer: []
+      responses:
+        "200":
+          description: Indexing run complete
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
 components:
   securitySchemes:
     sessionCookie:
       type: apiKey
       in: cookie
       name: next-auth.session-token
-      description: NextAuth.js session cookie obtained after OTP login.
+      description: |
+        NextAuth.js session cookie obtained after completing the phone OTP flow.
+        Valid for 30 days. Renews automatically on activity.
+    csrfToken:
+      type: apiKey
+      in: header
+      name: x-csrf-token
+      description: |
+        Signed CSRF token required on all state-mutating requests (POST, PUT, DELETE).
+        Obtain from `GET /api/v1/csrf`. Expires after 1 hour.
     cronBearer:
       type: http
       scheme: bearer
-      description: Static secret set in `CRON_SECRET` environment variable.
+      description: |
+        Static secret set in the `CRON_SECRET` environment variable.
+        Include as `Authorization: Bearer <CRON_SECRET>` on cron endpoint requests.
 
   parameters:
     GiftId:
@@ -522,14 +635,41 @@ components:
 
     ErrorResponse:
       type: object
-      required: [success, error]
+      required: [success, error, code]
       properties:
         success:
           type: boolean
           example: false
         error:
           type: string
-          example: "Unauthorized"
+          description: Human-readable message. Do not parse — use `code` instead.
+          example: "Gift is not yet unlocked"
+        code:
+          type: string
+          description: Stable machine-readable error code. See docs/api-auth-and-errors.md.
+          enum:
+            - UNAUTHORIZED
+            - FORBIDDEN
+            - SESSION_EXPIRED
+            - VALIDATION_ERROR
+            - INVALID_PAYLOAD
+            - GIFT_NOT_FOUND
+            - GIFT_ALREADY_CLAIMED
+            - GIFT_NOT_UNLOCKED
+            - GIFT_INVALID_STATE
+            - GIFT_DAILY_LIMIT
+            - PAYMENT_FAILED
+            - PAYMENT_INVALID_SIGNATURE
+            - IDEMPOTENCY_CONFLICT
+            - RATE_SLIPPAGE
+            - RATE_EXPIRED
+            - RATE_LIMIT_EXCEEDED
+            - INTERNAL_ERROR
+          example: "GIFT_NOT_UNLOCKED"
+        correlationId:
+          type: string
+          description: Request trace ID. Include in bug reports.
+          example: "req_01HXY4Z8ABCD"
 
     Gift:
       type: object
@@ -557,7 +697,32 @@ components:
           format: date-time
         status:
           type: string
-          enum: [pending_payment, locked, claimed, cancelled, expired]
+          description: |
+            Current lifecycle state. Valid transitions:
+            draft → pending_payment → funded → locked → unlocked → claimed
+            Any non-terminal state can transition to cancelled.
+            expired is set by the cron job on unlocked gifts older than 365 days.
+          enum:
+            - draft
+            - pending_payment
+            - funded
+            - locked
+            - unlocked
+            - claimed
+            - cancelled
+            - expired
+        contractId:
+          type: string
+          nullable: true
+          description: Soroban escrow contract address (set when status becomes locked)
+        stellarTxHash:
+          type: string
+          nullable: true
+          description: Stellar transaction hash for the escrow funding
+        claimTxHash:
+          type: string
+          nullable: true
+          description: Stellar transaction hash for the claim payout
         createdAt:
           type: string
           format: date-time
@@ -585,7 +750,15 @@ components:
           format: date-time
         status:
           type: string
-          enum: [pending_payment, locked, claimed, cancelled, expired]
+          enum:
+            - draft
+            - pending_payment
+            - funded
+            - locked
+            - unlocked
+            - claimed
+            - cancelled
+            - expired
 
     CreateGiftRequest:
       type: object

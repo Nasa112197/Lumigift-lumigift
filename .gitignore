@@ -35,6 +35,16 @@ Thumbs.db
 # Testing
 coverage/
 
+# Playwright test results and snapshots
+test-results/
+playwright-report/
+e2e/visual/snapshots/
+**/__snapshots__/
+
+# Stryker mutation testing
+.stryker-tmp/
+reports/mutation/
+
 # Rust / Cargo (contracts)
 contracts/target/
 
@@ -52,3 +62,6 @@ infra/terraform/.terraform.lock.hcl
 # Load test result files (uploaded as CI artifacts instead)
 load-tests/results/
 contracts/escrow/test_snapshots/
+
+# Kiro AI agent workspace (local only)
+.kiro/
