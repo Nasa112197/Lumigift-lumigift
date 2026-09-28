@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { sendOtp } from "@/lib/sms";
-import { storeOtp } from "@/lib/otp";
 import { withErrorHandler, withCsrf } from "@/server/middleware";
-import { getRedisClient } from "@/lib/redis";
+import { RedisUnavailableError, withRedis } from "@/lib/redis";
 import { normalizePhone } from "@/lib/phone";
 import type { ApiResponse } from "@/types";
 
@@ -14,11 +13,12 @@ async function checkRateLimit(
   limit: number,
   windowSec: number
 ): Promise<{ allowed: boolean; retryAfter: number }> {
-  const redis = await getRedisClient();
-  const count = await redis.incr(key);
-  if (count === 1) await redis.expire(key, windowSec);
-  const ttl = await redis.ttl(key);
-  return { allowed: count <= limit, retryAfter: ttl };
+  return withRedis("otp_rate_limit", async (redis) => {
+    const count = await redis.incr(key);
+    if (count === 1) await redis.expire(key, windowSec);
+    const ttl = await redis.ttl(key);
+    return { allowed: count <= limit, retryAfter: ttl };
+  });
 }
 
 export const POST = withErrorHandler(
@@ -35,29 +35,38 @@ export const POST = withErrorHandler(
 
     const ip = req.headers.get("x-forwarded-for")?.split(",")[0].trim() ?? "unknown";
 
-    // Per-phone: 3 requests per 10 minutes
-    const phoneCheck = await checkRateLimit(`rl:otp:phone:${phone}`, 3, 600);
-    if (!phoneCheck.allowed) {
-      return NextResponse.json<ApiResponse<never>>(
-        { success: false, error: "Too many OTP requests for this number." },
-        { status: 429, headers: { "Retry-After": String(phoneCheck.retryAfter) } }
-      );
-    }
+    try {
+      // Per-phone: 3 requests per 10 minutes
+      const phoneCheck = await checkRateLimit(`rl:otp:phone:${phone}`, 3, 600);
+      if (!phoneCheck.allowed) {
+        return NextResponse.json<ApiResponse<never>>(
+          { success: false, error: "Too many OTP requests for this number." },
+          { status: 429, headers: { "Retry-After": String(phoneCheck.retryAfter) } }
+        );
+      }
 
-    // Per-IP: 10 requests per hour
-    const ipCheck = await checkRateLimit(`rl:otp:ip:${ip}`, 10, 3600);
-    if (!ipCheck.allowed) {
-      return NextResponse.json<ApiResponse<never>>(
-        { success: false, error: "Too many OTP requests from this IP." },
-        { status: 429, headers: { "Retry-After": String(ipCheck.retryAfter) } }
-      );
-    }
+      // Per-IP: 10 requests per hour
+      const ipCheck = await checkRateLimit(`rl:otp:ip:${ip}`, 10, 3600);
+      if (!ipCheck.allowed) {
+        return NextResponse.json<ApiResponse<never>>(
+          { success: false, error: "Too many OTP requests from this IP." },
+          { status: 429, headers: { "Retry-After": String(ipCheck.retryAfter) } }
+        );
+      }
 
-    const otp = await sendOtp(phone);
-    await storeOtp(phone, otp);
-
-    if (process.env.NODE_ENV === "development") {
-      console.warn(`[DEV] OTP for ${phone}: ${otp}`);
+      await sendOtp(phone);
+    } catch (err) {
+      if (err instanceof RedisUnavailableError) {
+        return NextResponse.json<ApiResponse<never>>(
+          {
+            success: false,
+            error: "OTP service is temporarily unavailable. Please try again later.",
+            code: "REDIS_UNAVAILABLE",
+          },
+          { status: 503 }
+        );
+      }
+      throw err;
     }
 
     // Always return the same body regardless of whether the number is registered.

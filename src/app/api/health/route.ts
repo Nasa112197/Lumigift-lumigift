@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import pool from "@/lib/db";
-import { getRedisClient } from "@/lib/redis";
+import { getRedisMetrics, withRedis } from "@/lib/redis";
 import { serverConfig } from "@/server/config";
 
 /**
@@ -18,11 +18,12 @@ export async function GET() {
   ]);
 
   const checks = { db, redis, horizon };
+  const redisMetrics = getRedisMetrics();
   const degraded = Object.values(checks).some((s) => s === "error");
   const status = degraded ? "degraded" : "ok";
 
   return NextResponse.json(
-    { status, timestamp: new Date().toISOString(), checks },
+    { status, timestamp: new Date().toISOString(), checks, metrics: { redis: redisMetrics } },
     { status: degraded ? 503 : 200 }
   );
 }
@@ -38,8 +39,7 @@ async function checkDb(): Promise<"ok" | "error"> {
 
 async function checkRedis(): Promise<"ok" | "error"> {
   try {
-    const client = await getRedisClient();
-    await client.ping();
+    await withRedis("health_check", (client) => client.ping());
     return "ok";
   } catch {
     return "error";
