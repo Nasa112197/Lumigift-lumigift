@@ -92,3 +92,21 @@ load-tests/results/
 
 # Turbopack cache
 .next/cache/
+
+# ── Snapshots ─────────────────────────────────────────────────────────────────
+# Jest auto-generated snapshots from watch mode.
+# Intentional baseline snapshots should be committed explicitly.
+**/__snapshots__/*.snap
+
+# ── OS & editor artefacts ────────────────────────────────────────────────────
+ehthumbs.db
+Desktop.ini
+*.orig
+*.rej
+.direnv
+.envrc
+
+# ── Temporary files ───────────────────────────────────────────────────────────
+*.tmp
+*.temp
+*.bak
