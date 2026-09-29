@@ -38,10 +38,11 @@ Thumbs.db
 coverage/
 .nyc_output/
 
-# Jest snapshot files — committed when intentional, but auto-generated
-# intermediate snapshots from watch-mode should be ignored
-# Uncomment the line below only if you want ALL snapshots ignored:
-# **/__snapshots__/
+# Jest snapshot files — only auto-generated snapshots are excluded.
+# Intentionally committed snapshots (e.g. component tests) should be kept.
+# Auto-generated watch-mode / obsolete snapshots are excluded:
+**/__snapshots__/*.snap.bak
+**/__snapshots__/*.snap.tmp
 
 # Playwright test-result artifacts — screenshots, videos, traces.
 # These are uploaded as CI artifacts instead of being committed to the repo.
@@ -64,6 +65,13 @@ e2e/visual/__snapshots__/**/*-expected.png
 # Stryker mutation testing output
 .stryker-tmp/
 reports/
+
+# Jest worker temp files
+jest-worker-*
+
+# Test DB seed artifacts
+*.test.db
+*.test.sqlite
 
 # ── Rust / Cargo ──────────────────────────────────────────────────────────────
 contracts/target/
