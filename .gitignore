@@ -92,3 +92,11 @@ load-tests/results/
 
 # Turbopack cache
 .next/cache/
+
+# ── Jest snapshots ────────────────────────────────────────────────────────────
+# Jest test snapshots (auto-generated, not committed)
+**/__snapshots__/*.snap
+# Coverage lcov
+coverage/lcov.info
+# Editor swap files
+*.orig
