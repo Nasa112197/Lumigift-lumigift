@@ -1,0 +1,48 @@
+/* NotificationBell.module.css */
+
+.bell {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: var(--radius-md, 0.5rem);
+  color: var(--color-text-secondary, #9898b0);
+  text-decoration: none;
+  transition: color var(--transition-fast, 120ms ease),
+    background-color var(--transition-fast, 120ms ease);
+}
+
+.bell:hover {
+  color: var(--color-text-primary, #f0f0f5);
+  background-color: rgba(255, 255, 255, 0.06);
+}
+
+.bell:focus-visible {
+  outline: 2px solid var(--color-brand-primary, #6c3bff);
+  outline-offset: 2px;
+}
+
+.icon {
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.badge {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  min-width: 1rem;
+  height: 1rem;
+  padding: 0 3px;
+  border-radius: var(--radius-full, 9999px);
+  background-color: var(--color-brand-primary, #6c3bff);
+  color: #fff;
+  font-size: 0.625rem;
+  font-weight: var(--font-bold, 700);
+  line-height: 1rem;
+  text-align: center;
+  white-space: nowrap;
+  pointer-events: none;
+}
