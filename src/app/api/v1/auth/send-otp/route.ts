@@ -23,15 +23,9 @@ async function checkRateLimit(
 
 export const POST = withErrorHandler(
   withCsrf(async (req: NextRequest) => {
-    const body = await req.json();
-    const phone = normalizePhone(String(body?.phone ?? ""));
-
-    if (!phone) {
-      return NextResponse.json<ApiResponse<never>>(
-        { success: false, error: "Invalid phone number" },
-        { status: 400 }
-      );
-    }
+    const validation = await validateBody(req, sendOtpSchema);
+    if (!validation.success) return validation.response;
+    const { phone } = validation.data;
 
     const ip = req.headers.get("x-forwarded-for")?.split(",")[0].trim() ?? "unknown";
 
