@@ -1,12 +1,20 @@
 {
   "crons": [
     {
-      "path": "/api/cron/unlock",
+      "path": "/api/v1/cron/unlock",
       "schedule": "* * * * *"
     },
     {
-      "path": "/api/cron/expire",
+      "path": "/api/v1/cron/expire",
       "schedule": "0 2 * * *"
+    },
+    {
+      "path": "/api/v1/cron/reconcile",
+      "schedule": "0 */6 * * *"
+    },
+    {
+      "path": "/api/v1/cron/index-events",
+      "schedule": "*/5 * * * *"
     }
   ]
 }

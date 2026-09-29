@@ -67,6 +67,7 @@ reports/
 
 # ── Rust / Cargo ──────────────────────────────────────────────────────────────
 contracts/target/
+contracts/escrow/test_snapshots/
 
 # ── Misc ──────────────────────────────────────────────────────────────────────
 *.tsbuildinfo
@@ -85,4 +86,9 @@ infra/terraform/.terraform.lock.hcl
 # ── Load test artifacts ───────────────────────────────────────────────────────
 # Result files are uploaded as CI artifacts instead of being committed
 load-tests/results/
-contracts/escrow/test_snapshots/
+
+# Kiro IDE
+.kiro/
+
+# Turbopack cache
+.next/cache/
