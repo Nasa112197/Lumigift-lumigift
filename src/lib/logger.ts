@@ -41,20 +41,26 @@ export const logger = pino(
       env: process.env.NODE_ENV,
       app: process.env.NEXT_PUBLIC_APP_NAME ?? "lumigift",
     },
-    // Redact sensitive fields before they reach any transport
+    // Redact sensitive fields before they reach any transport.
+    // Keep this list in sync with docs/ops/log-retention-policy.md § Redacted Fields.
     redact: {
       paths: [
+        // PII — phone numbers
         "phone",
         "recipientPhone",
         "recipientPhoneHash",
         "*.phone",
         "*.recipientPhone",
+        // Auth / session
         "req.headers.authorization",
         "req.headers.cookie",
+        // Credentials & secrets
         "*.token",
         "*.secret",
         "*.apiKey",
         "*.privateKey",
+        "*.password",
+        "*.paystackSignature",
       ],
       censor: "[REDACTED]",
     },
