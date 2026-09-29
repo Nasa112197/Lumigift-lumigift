@@ -5,6 +5,7 @@ import Script from "next/script";
 import "@/styles/globals.css";
 import "@/styles/components.css";
 import { Navbar } from "@/components/layout/Navbar";
+import { TestnetBanner } from "@/components/ui/TestnetBanner";
 import { Providers } from "./providers";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
@@ -60,6 +61,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
             Skip to main content
           </a>
           <Navbar />
+          <TestnetBanner />
           <main id="main-content">{children}</main>
         </Providers>
       </body>
