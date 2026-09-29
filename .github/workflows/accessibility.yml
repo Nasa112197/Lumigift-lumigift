@@ -24,14 +24,21 @@ jobs:
 
       - run: npm ci --legacy-peer-deps
 
-      - name: Run accessibility tests
+      - name: Run accessibility tests (existing routes)
         run: ./node_modules/.bin/jest src/app/__tests__/accessibility.test.tsx --no-coverage --json --outputFile=axe-results.json
         # Exit code non-zero if any critical/serious violation is found (test throws)
+
+      - name: Run accessibility regression gates (all routes — issue #128)
+        run: ./node_modules/.bin/jest src/app/__tests__/accessibility-routes.test.tsx --no-coverage --json --outputFile=axe-routes-results.json
+        # Covers /help, /auth/register, Navbar, Button, Input, Dialog.
+        # Exceptions are tracked in docs/accessibility/known-violations.md.
 
       - name: Upload axe results artifact
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: axe-audit-results
-          path: axe-results.json
+          path: |
+            axe-results.json
+            axe-routes-results.json
           retention-days: 30
