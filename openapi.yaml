@@ -125,7 +125,7 @@ paths:
     get:
       tags: [Gifts]
       summary: List gifts sent by the authenticated user
-      description: Returns a cursor-paginated list of gifts (10 per page).
+      description: Returns a stable cursor-paginated list of gifts (10 per page). Cursors are opaque, signed, and bound to the authenticated sender.
       security:
         - sessionCookie: []
       parameters:
@@ -157,6 +157,9 @@ paths:
                             nullable: true
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "400":
+          description: Cursor is malformed, tampered with, or belongs to another sender.
+          $ref: "#/components/responses/BadRequest"
     post:
       tags: [Gifts]
       summary: Create a new gift
