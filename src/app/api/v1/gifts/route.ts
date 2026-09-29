@@ -7,6 +7,7 @@ import {
   getGiftsBySenderPaginated,
   getGiftsBySenderPage,
 } from "@/server/services/gift.service";
+import { decodeGiftCursor, encodeGiftCursor } from "@/server/services/gift-cursor";
 import { withErrorHandler, withCsrf } from "@/server/middleware";
 import {
   checkIdempotencyKey,
@@ -45,14 +46,29 @@ export const GET = withErrorHandler(async (req: NextRequest) => {
     return NextResponse.json<ApiResponse<GiftPageOffset>>({ success: true, data: result });
   }
 
-  // Cursor-based pagination (legacy)
-  const cursor = searchParams.get("cursor");
+  // Cursor pagination uses a signed, sender-bound snapshot position.
+  const cursorToken = searchParams.get("cursor");
+  const cursor = cursorToken ? decodeGiftCursor(cursorToken, userId) : null;
+  if (cursorToken && !cursor) {
+    return NextResponse.json<ApiResponse<never>>(
+      { success: false, error: "Invalid gift cursor", code: "VALIDATION_ERROR" },
+      { status: 400 }
+    );
+  }
+
   const pageSize = Math.min(
     MAX_LIMIT,
     Math.max(1, parseInt(searchParams.get("pageSize") ?? "10", 10) || 10)
   );
   const page = await getGiftsBySenderPaginated(userId, cursor, pageSize);
-  return NextResponse.json<ApiResponse<GiftPage>>({ success: true, data: page });
+  return NextResponse.json<ApiResponse<GiftPage>>({
+    success: true,
+    data: {
+      gifts: page.gifts,
+      total: page.total,
+      nextCursor: page.nextCursor ? encodeGiftCursor(userId, page.nextCursor) : null,
+    },
+  });
 });
 
 export const POST = withErrorHandler(
@@ -65,14 +81,9 @@ export const POST = withErrorHandler(
       );
     }
 
-    const body = await req.json();
-    const parsed = createGiftSchema.safeParse(body);
-    if (!parsed.success) {
-      return NextResponse.json<ApiResponse<never>>(
-        { success: false, error: parsed.error.issues[0].message },
-        { status: 400 }
-      );
-    }
+    const validation = await validateBody(req, createGiftSchema);
+    if (!validation.success) return validation.response;
+    const parsed = validation;
 
     const userId = (session.user as { id: string }).id;
     const idempotencyKey = req.headers.get(IDEMPOTENCY_KEY_HEADER);

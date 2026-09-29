@@ -123,6 +123,36 @@ export interface ApiError {
 
 export type ApiResponse<T> = ApiSuccess<T> | ApiError;
 
+// ─── Moderation (#149) ────────────────────────────────────────────────────────
+export type ModerationAction = "approved" | "removed";
+export type ModerationStatus = "pending" | "resolved";
+
+export interface MessageReport {
+  id: string;
+  giftId: string;
+  reporterId: string;
+  reason: string;
+  status: ModerationStatus;
+  action?: ModerationAction;
+  createdAt: Date;
+  resolvedAt?: Date;
+}
+
+// ─── Support (#152) ────────────────────────────────────────────────────────────
+export type SupportCaseStatus = "open" | "in_progress" | "resolved" | "closed";
+
+export interface SupportCase {
+  id: string;
+  caseReference: string;
+  userId: string;
+  giftId: string;
+  reason: string;
+  details?: string;
+  status: SupportCaseStatus;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 // ─── Stellar ──────────────────────────────────────────────────────────────────
 export interface StellarAccount {
   publicKey: string;

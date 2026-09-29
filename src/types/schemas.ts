@@ -11,7 +11,7 @@ const e164Phone = z.string().transform((val, ctx) => {
   return normalized;
 });
 
-export const createGiftSchema = z.object({
+export const createGiftSchema = z.strictObject({
   recipientPhone: e164Phone,
   recipientName: z.string().min(2, "Name must be at least 2 characters"),
   amountNgn: z
@@ -34,15 +34,30 @@ export const createGiftSchema = z.object({
   recipientEmail: z.string().email("Enter a valid email address").optional(),
 });
 
-export const verifyOtpSchema = z.object({
+export const verifyOtpSchema = z.strictObject({
   phone: e164Phone,
   otp: z.string().length(6, "OTP must be 6 digits"),
 });
 
-export const claimGiftSchema = z.object({
+export const sendOtpSchema = z.strictObject({ phone: e164Phone });
+
+export const registerSchema = z.strictObject({
+  phone: e164Phone,
+  displayName: z.string().trim().min(2, "Name must be at least 2 characters"),
+  invitationToken: z.string().trim().optional(),
+});
+
+export const reportLoginSchema = z.strictObject({
+  userId: z.string().min(1, "User ID is required"),
+  fingerprint: z.string().min(1, "Fingerprint is required"),
+});
+
+export const claimGiftSchema = z.strictObject({
   giftId: z.string().uuid(),
   recipientStellarKey: z.string().length(56, "Invalid Stellar public key"),
 });
+
+export const claimGiftRequestSchema = claimGiftSchema.omit({ giftId: true });
 
 export type CreateGiftInput = z.infer<typeof createGiftSchema>;
 export type CreateGiftFormInput = z.input<typeof createGiftSchema>;

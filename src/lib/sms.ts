@@ -1,5 +1,6 @@
 import axios from "axios";
 import { serverConfig } from "@/server/config";
+import { generateOtp, storeOtp } from "@/lib/otp";
 
 const termiiClient = axios.create({
   baseURL: "https://api.ng.termii.com/api",
@@ -43,7 +44,8 @@ export async function sendNewDeviceAlert(
  * @throws If the Termii API returns a non-2xx response.
  */
 export async function sendOtp(phone: string): Promise<string> {
-  const otp = Math.floor(100000 + Math.random() * 900000).toString();
+  const otp = generateOtp();
+  await storeOtp(phone, otp);
 
   await termiiClient.post("/sms/send", {
     to: phone,
@@ -53,9 +55,8 @@ export async function sendOtp(phone: string): Promise<string> {
     channel: "generic",
     api_key: serverConfig.termii.apiKey,
   });
-
-  return otp;
 }
+return otp;
 
 /**
  * Sends a gift invitation SMS to an unregistered recipient.

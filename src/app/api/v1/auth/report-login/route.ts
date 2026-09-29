@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
-import { withErrorHandler } from "@/server/middleware";
+import { withErrorHandler, validateBody } from "@/server/middleware";
+import { reportLoginSchema } from "@/types/schemas";
 import type { ApiResponse } from "@/types";
 
 /**
@@ -18,9 +19,10 @@ async function handler(req: NextRequest): Promise<NextResponse> {
     userId = searchParams.get("uid");
     fingerprint = searchParams.get("fp");
   } else {
-    const body = await req.json().catch(() => ({}));
-    userId = body.userId ?? null;
-    fingerprint = body.fingerprint ?? null;
+    const validation = await validateBody(req, reportLoginSchema);
+    if (!validation.success) return validation.response;
+    userId = validation.data.userId;
+    fingerprint = validation.data.fingerprint;
   }
 
   if (!userId || !fingerprint) {
@@ -30,11 +32,10 @@ async function handler(req: NextRequest): Promise<NextResponse> {
     );
   }
 
-  await pool.query(
-    `INSERT INTO suspicious_login_reports (user_id, fingerprint)
-     VALUES ($1, $2)`,
-    [userId, fingerprint]
-  );
+  await pool.query("INSERT INTO suspicious_login_reports (user_id, fingerprint) VALUES ($1, $2)", [
+    userId,
+    fingerprint,
+  ]);
 
   return NextResponse.json<ApiResponse<{ message: string }>>({
     success: true,

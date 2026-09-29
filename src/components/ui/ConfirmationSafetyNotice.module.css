@@ -1,0 +1,32 @@
+/* ConfirmationSafetyNotice.module.css */
+
+.notice {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  background-color: rgba(59, 130, 246, 0.08);
+  border: 1px solid rgba(59, 130, 246, 0.25);
+  border-radius: var(--radius-md, 0.5rem);
+  font-size: var(--text-sm);
+  color: var(--color-info, #3b82f6);
+  margin: var(--space-4) 0;
+  line-height: var(--leading-normal, 1.5);
+}
+
+.icon {
+  flex-shrink: 0;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.text {
+  flex: 1;
+}
+
+.testnetSuffix {
+  display: inline;
+  font-weight: var(--font-semibold, 600);
+  color: var(--color-warning, #f59e0b);
+  margin-left: var(--space-1);
+}

@@ -1,11 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import pool from "@/lib/db";
 import { getGiftById, hashPhone } from "@/server/services/gift.service";
 import { claimGift } from "@/server/services/claim.service";
 import { claimGiftSchema } from "@/types/schemas";
-import { withErrorHandler, withCsrf } from "@/server/middleware";
+import { withErrorHandler, withCsrf, validateBody } from "@/server/middleware";
 import { getInvitationByPhoneAndGift, claimInvitation } from "@/server/services/invitation.service";
 import type { ApiResponse } from "@/types";
 
@@ -21,16 +20,8 @@ export const POST = withErrorHandler(
 
     const { params } = context as { params: { id: string } };
 
-    const body = await req.json();
-    // Merge route param id into the parsed body for validation
-    const parsed = claimGiftSchema.safeParse({ ...body, giftId: params.id });
-
-    if (!parsed.success) {
-      return NextResponse.json<ApiResponse<never>>(
-        { success: false, error: parsed.error.issues[0].message },
-        { status: 400 }
-      );
-    }
+    const validation = await validateBody(req, claimGiftSchema, { giftId: params.id });
+    if (!validation.success) return validation.response;
 
     // Always use the route param id — never trust body for giftId
     const giftId = params.id;
@@ -79,7 +70,7 @@ export const POST = withErrorHandler(
       }
     }
 
-    const { txHash } = await claimGift(gift, parsed.data.recipientStellarKey);
+    const { txHash } = await claimGift(gift, validation.data.recipientStellarKey);
 
     return NextResponse.json<ApiResponse<{ txHash: string }>>({
       success: true,
