@@ -22,3 +22,35 @@ the CI blocking check, along with justification and the ticket tracking the fix.
 > **Policy:** Any new critical or serious axe violation must either be fixed
 > before merging, or documented here with a justification and a linked ticket.
 > Violations with impact `moderate` or `minor` are logged but do not block CI.
+
+---
+
+## Accessibility & Localization Requirements
+
+Full testable requirements for contrast levels, assistive-technology targets,
+supported languages, date formats, and translation key conventions are defined
+in a separate document:
+
+👉 **[a11y-localization-requirements.md](a11y-localization-requirements.md)**
+
+That document supersedes any informal requirements previously described in this
+file. When adding a new known violation, cross-reference the relevant
+acceptance criteria from that requirements doc (e.g. `AC-CR-1`, `AC-AT-3`).
+
+_Section added 2026-09-29 — Issue #155_
+
+---
+
+## Accessibility & Localization Requirements
+
+Full testable requirements for contrast levels, assistive-technology targets,
+supported languages, date formats, and translation key conventions are defined
+in a separate document:
+
+👉 **[a11y-localization-requirements.md](a11y-localization-requirements.md)**
+
+That document supersedes any informal requirements previously described in this
+file. When adding a new known violation, cross-reference the relevant
+acceptance criteria from that requirements doc (e.g. `AC-CR-1`, `AC-AT-3`).
+
+_Section added 2026-09-29 — Issue #155_

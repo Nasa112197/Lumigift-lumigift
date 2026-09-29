@@ -113,9 +113,12 @@ jobs:
         run: npm run build
 
   e2e:
-    name: Playwright E2E
+    name: Playwright E2E (Chromium + Firefox + WebKit + Mobile)
     runs-on: ubuntu-latest
     needs: [build]
+    # Issue #125: mobile viewport coverage
+    # Issue #126: cross-browser (Chromium, Firefox, WebKit) coverage
+    # All tests use Playwright route-mocks so no real money moves.
     env:
       NEXT_PUBLIC_APP_URL: http://localhost:3000
       NEXT_PUBLIC_APP_NAME: Lumigift
@@ -145,7 +148,11 @@ jobs:
       - run: npm ci --legacy-peer-deps
 
       - name: Install Playwright browsers
-        run: npx playwright install --with-deps chromium
+        # Install all browsers used in playwright.config.ts projects:
+        #   chromium  — desktop Chrome + Pixel 5 (mobile-chrome project)
+        #   firefox   — desktop Firefox           (Issue #126)
+        #   webkit    — desktop Safari + iPhone 12 (Issue #126, #125)
+        run: npx playwright install --with-deps chromium firefox webkit
 
       - name: Build Next.js
         run: npm run build
@@ -153,28 +160,37 @@ jobs:
       # playwright.config.ts starts `npm run start` automatically in CI.
       # No manual server step needed — Playwright waits for the server to be
       # ready before running any test.
-      - name: Run E2E tests
+      - name: Run E2E tests (all browsers + mobile viewports)
         run: npm run e2e
         env:
           CI: true
+        # Browser-failure triage:
+        #   - Chromium failures → label `browser:chromium`
+        #   - Firefox failures  → label `browser:firefox`  (see playwright.config.ts notes)
+        #   - WebKit failures   → label `browser:webkit`   (see playwright.config.ts notes)
+        #   - Mobile failures   → label `viewport:mobile-chrome` / `viewport:mobile-safari`
+        #   Consult playwright-report/ → filter by project name for targeted debugging.
 
       # Upload all failure artifacts: HTML report, screenshots, and videos.
-      # These are retained for 7 days so engineers can inspect flaky failures.
+      # Retained for 14 days so cross-browser failures can be triaged across runs.
+      # Issue #125: mobile artifact upload
+      # Issue #126: cross-browser artifact upload
       - name: Upload Playwright HTML report
-        if: failure()
+        if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: playwright-report
           path: playwright-report/
-          retention-days: 7
+          retention-days: 14
 
-      - name: Upload failure screenshots
+      - name: Upload failure screenshots and traces
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: playwright-screenshots
-          path: test-results/**/*.png
-          retention-days: 7
+          name: playwright-test-results
+          # Captures screenshots, trace zips, and error-context.md per test
+          path: test-results/
+          retention-days: 14
 
       - name: Upload failure videos
         if: failure()
@@ -182,7 +198,7 @@ jobs:
         with:
           name: playwright-videos
           path: test-results/**/*.webm
-          retention-days: 7
+          retention-days: 14
 
   integration-tests:
     name: Integration Tests (test DB)

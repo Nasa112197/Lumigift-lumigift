@@ -349,6 +349,47 @@ describe("getGiftsBySenderPaginated", () => {
     expect(page.gifts).toHaveLength(0);
     expect(page.total).toBe(0);
   });
+
+  it("excludes gifts inserted after the first-page snapshot", async () => {
+    const olderGift = {
+      id: "gift-older",
+      senderId: SENDER_ID,
+      createdAt: new Date("2026-01-01T00:00:00.000Z"),
+    } as Gift;
+    const newerGift = {
+      id: "gift-newer",
+      senderId: SENDER_ID,
+      createdAt: new Date("2026-01-02T00:00:00.000Z"),
+    } as Gift;
+    gifts.set(olderGift.id, olderGift);
+    gifts.set(newerGift.id, newerGift);
+
+    const firstPage = await getGiftsBySenderPaginated(SENDER_ID, null, 1);
+    const insertedGift = {
+      id: "gift-inserted",
+      senderId: SENDER_ID,
+      createdAt: new Date(Date.now() + 60_000),
+    } as Gift;
+    gifts.set(insertedGift.id, insertedGift);
+
+    const nextPage = await getGiftsBySenderPaginated(SENDER_ID, firstPage.nextCursor, 1);
+    expect(nextPage.gifts.map((gift) => gift.id)).toEqual([olderGift.id]);
+    expect(nextPage.total).toBe(2);
+  });
+
+  it("uses gift ID as a deterministic tie-breaker", async () => {
+    const createdAt = new Date("2026-01-02T00:00:00.000Z");
+    for (const id of ["gift-a", "gift-b"]) {
+      gifts.set(id, { id, senderId: SENDER_ID, createdAt } as Gift);
+    }
+
+    const firstPage = await getGiftsBySenderPaginated(SENDER_ID, null, 1);
+    const secondPage = await getGiftsBySenderPaginated(SENDER_ID, firstPage.nextCursor, 1);
+    expect([...firstPage.gifts, ...secondPage.gifts].map((gift) => gift.id)).toEqual([
+      "gift-b",
+      "gift-a",
+    ]);
+  });
 });
 
 // ─── getGiftsByRecipient ──────────────────────────────────────────────────────

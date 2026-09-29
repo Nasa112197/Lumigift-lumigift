@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { queryAuditLogs, AuditEventType } from "@/server/services/audit.service";
 import { withErrorHandler } from "@/server/middleware";
 import { requireAdmin } from "@/server/middleware/admin";
+import { parseAuditLogQuery } from "./query";
 import type { ApiResponse } from "@/types";
 
 interface AuditLogQueryResponse {
@@ -20,23 +21,12 @@ interface AuditLogQueryResponse {
   total: number;
 }
 
-export const GET = withErrorHandler(async (req: NextRequest) => {
-  const auth = await requireAdmin();
-  if (auth instanceof NextResponse) return auth;
-
-  const searchParams = req.nextUrl.searchParams;
-  const userId = searchParams.get("userId") ?? undefined;
-  const giftId = searchParams.get("giftId") ?? undefined;
-  const eventType = searchParams.get("eventType") as AuditEventType | null;
-  const startDateStr = searchParams.get("startDate");
-  const endDateStr = searchParams.get("endDate");
-  const limitStr = searchParams.get("limit");
-  const offsetStr = searchParams.get("offset");
-
-  const startDate = startDateStr ? new Date(startDateStr) : undefined;
-  const endDate = endDateStr ? new Date(endDateStr) : undefined;
-  const limit = limitStr ? parseInt(limitStr, 10) : 50;
-  const offset = offsetStr ? parseInt(offsetStr, 10) : 0;
+function invalidQuery(error: string): NextResponse {
+  return NextResponse.json<ApiResponse<never>>(
+    { success: false, error, code: "VALIDATION_ERROR" },
+    { status: 400 }
+  );
+}
 
 export const GET = withErrorHandler(async (req: NextRequest) => {
   const auth = await requireAdmin();

@@ -11,6 +11,7 @@ import { sendGiftInvitation } from "@/lib/sms";
 import { stripHtmlTags } from "@/lib/sanitize";
 import { createAuditLog } from "./audit.service";
 import { sendGiftReceivedEmail } from "@/lib/email";
+import type { GiftCursorPosition } from "./gift-cursor";
 
 // ─── Exchange rate helper ─────────────────────────────────────────────────────
 import { getExchangeRate, lockExchangeRate } from "@/server/services/exchange-rate.service";
@@ -224,6 +225,12 @@ export interface GiftPage {
   nextCursor: string | null;
 }
 
+export interface GiftPageResult {
+  gifts: Gift[];
+  total: number;
+  nextCursor: GiftCursorPosition | null;
+}
+
 /** Offset-based paginated result for {@link getGiftsBySenderPage}. */
 export interface GiftPageOffset {
   data: Gift[];
@@ -238,23 +245,46 @@ export interface GiftPageOffset {
  * date descending (newest first).
  *
  * @param senderId - The authenticated user's ID.
- * @param cursor - The ID of the last gift from the previous page, or `null` for
- *   the first page.
+ * @param cursor - The snapshot and last-item position from the previous page,
+ *   or `null` for the first page.
  * @param limit - Maximum number of gifts to return per page.
  * @returns A {@link GiftPage} containing the gifts, total count, and next cursor.
  */
 export async function getGiftsBySenderPaginated(
   senderId: string,
-  cursor: string | null,
+  cursor: GiftCursorPosition | null,
   limit: number
-): Promise<GiftPage> {
+): Promise<GiftPageResult> {
+  const snapshotAt = cursor ? new Date(cursor.snapshotAt) : new Date();
   const all = [...gifts.values()]
     .filter((g) => g.senderId === senderId)
-    .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+    .filter((g) => g.createdAt <= snapshotAt)
+    .sort(
+      (a, b) =>
+        b.createdAt.getTime() - a.createdAt.getTime() || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0)
+    );
 
-  const startIndex = cursor ? all.findIndex((g) => g.id === cursor) + 1 : 0;
-  const page = all.slice(startIndex, startIndex + limit);
-  const nextCursor = startIndex + limit < all.length ? page[page.length - 1].id : null;
+  const remaining = cursor
+    ? all.filter((gift) => {
+        const createdAt = gift.createdAt.getTime();
+        const cursorCreatedAt = Date.parse(cursor.createdAt);
+        return (
+          createdAt < cursorCreatedAt || (createdAt === cursorCreatedAt && gift.id < cursor.id)
+        );
+      })
+    : all;
+  const safeLimit = Math.min(100, Math.max(1, Math.floor(limit)));
+  const page = remaining.slice(0, safeLimit);
+  const hasNextPage = remaining.length > safeLimit;
+  const lastGift = page[page.length - 1];
+  const nextCursor =
+    hasNextPage && lastGift
+      ? {
+          snapshotAt: snapshotAt.toISOString(),
+          createdAt: lastGift.createdAt.toISOString(),
+          id: lastGift.id,
+        }
+      : null;
 
   return { gifts: page, total: all.length, nextCursor };
 }
